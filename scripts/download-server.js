@@ -103,6 +103,16 @@ cp.spawn = function(command, args, options) {
 
         // Simulate immediate exit with success
         setTimeout(() => {
+            if (command.includes('ffprobe') || command === process.env.FFPROBE_BIN) {
+                const mockOutput = JSON.stringify({
+                    streams: [
+                        { codec_type: 'video', codec_name: 'h264' },
+                        { codec_type: 'audio', codec_name: 'aac' }
+                    ],
+                    format: { format_name: 'matroska,webm' }
+                });
+                mockProcess.stdout.emit('data', Buffer.from(mockOutput));
+            }
             mockProcess.emit('close', 0);
             mockProcess.emit('exit', 0);
         }, 10);
