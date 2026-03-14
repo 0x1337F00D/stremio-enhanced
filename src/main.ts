@@ -243,8 +243,8 @@ app.on("ready", async () => {
         if(!await StremioService.isProcessRunning()) {
             const platform = process.platform;
             
-            // If the user is on Windows, give the option to either use Stremio Service or server.js
-            if(platform === "win32") {
+            // Give the option to either use Stremio Service or server.js
+            if(platform === "win32" || platform === "darwin" || platform === "linux") {
                 if(existsSync(useStremioServiceFlagPath)) {
                     await useStremioService();
                 } else if(existsSync(useServerJSFlagPath)) {
@@ -252,9 +252,6 @@ app.on("ready", async () => {
                 } else {
                     await chooseStreamingServer();
                 }
-                // For macOS and Linux, just give the instruction to use server.js
-            } else if (platform === "darwin" || platform === "linux") {
-                useServerJS();
             }
         } else {
             logger.info("Stremio Service is already running.");
@@ -291,7 +288,7 @@ async function chooseStreamingServer() {
         "Stremio Enhanced requires a Stremio Streaming Server for playback to function properly. You can either use the Stremio Service or set up a local streaming server manually.\nThis is a one-time setup. The option you choose will be saved for future app launches.\n\n" +
         "Would you like to use the Stremio Service for streaming?\n\n" +
         "Click 'No' to attempt using server.js directly",
-        ["Yes, use Stremio Service (recommended on Windows)", "No, use server.js directly (manual setup required)"]
+        ["Yes, use Stremio Service (recommended)", "No, use server.js directly (manual setup required)"]
     );
     
     if(result === 0) {

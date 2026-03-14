@@ -176,6 +176,7 @@ class StreamingServer {
                 // Handle macOS zip file
                 execSync(`unzip -o "${archivePath}" -d "${this.streamingServerDir}"`, { encoding: "utf8" });
                 chmodSync(ffmpegPath, 0o755);
+                execSync(`xattr -cr "${ffmpegPath}"`, { encoding: "utf8" });
                 unlinkSync(archivePath);
 
                 this.logger.info(`FFmpeg extracted successfully. Downloading FFprobe from ${this.getMacOSFFprobeUrl()}...`);
@@ -187,6 +188,7 @@ class StreamingServer {
                 // Extract ffprobe
                 execSync(`unzip -o "${ffprobeArchivePath}" -d "${this.streamingServerDir}"`, { encoding: "utf8" });
                 chmodSync(ffprobePath, 0o755);
+                execSync(`xattr -cr "${ffprobePath}"`, { encoding: "utf8" });
                 unlinkSync(ffprobeArchivePath);
                 return true;
             } else if (process.platform === "win32") {
