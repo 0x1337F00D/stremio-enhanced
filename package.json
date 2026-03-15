@@ -41,6 +41,7 @@
 		"@capacitor/browser": "^8.0.0",
 		"@capacitor/core": "^8.0.1",
 		"@capacitor/filesystem": "^8.1.0",
+		"@capawesome/capacitor-file-picker": "^8.0.2",
 		"@xhayper/discord-rpc": "^1.2.1",
 		"capacitor-nodejs": "https://github.com/hampoelz/capacitor-nodejs/releases/download/v1.0.0-beta.9/capacitor-nodejs.tgz",
 		"discord-api-types": "^0.37.119",

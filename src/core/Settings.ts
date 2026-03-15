@@ -210,7 +210,7 @@ class Settings {
         if (nav) return nav;
 
         // Dynamic fallback
-        const keywords = ["General", "Interface", "Player", "Streaming"];
+        const keywords = ["General", "Interface", "Player", "Streaming", "Shortcuts"];
         const links = Array.from(document.querySelectorAll('a, div[title]'));
 
         for (const link of links) {
@@ -242,7 +242,7 @@ class Settings {
 
         // Dynamic fallback
         const navMenu = this.getNavMenu();
-        const keywords = ["General", "Interface", "Player", "Streaming"];
+        const keywords = ["General", "Interface", "Player", "Streaming", "Shortcuts"];
         const allDivs = Array.from(document.querySelectorAll('div'));
         for (const div of allDivs) {
              // Exclude nav menu and its descendants
@@ -264,7 +264,7 @@ class Settings {
 
     private static getExistingSection(panel: Element): Element | null {
         // Find a child that contains "General" or "Player"
-        const keywords = ["General", "Interface", "Player"];
+        const keywords = ["General", "Interface", "Player", "Streaming", "Shortcuts"];
         for (let i = 0; i < panel.children.length; i++) {
             const child = panel.children[i];
             if (keywords.some(k => child.textContent?.includes(k))) {
