@@ -245,9 +245,9 @@ class ModManager {
     }
         
     public static scrollListener(): void {
-        helpers.waitForElm(".menu-xeE06 > div:nth-child(5) > div").then(() => {
+        helpers.waitForElm('[data-section="enhanced"]').then(() => {
             const enhanced = document.getElementById('enhanced');
-            const enhancedNav = document.querySelector('.menu-xeE06 > div:nth-child(5) > div');
+            const enhancedNav = document.querySelector('[data-section="enhanced"]');
 
             if (!enhanced || !enhancedNav) return;
 

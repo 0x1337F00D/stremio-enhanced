@@ -20,6 +20,7 @@ import {
 import ExtractMetaData from "../utils/ExtractMetaData";
 import { NodeJS } from 'capacitor-nodejs';
 import LogManager from "../core/LogManager";
+import { FilePicker } from '@capawesome/capacitor-file-picker';
 
 // Initialize platform for Capacitor
 PlatformManager.setPlatform(new CapacitorPlatform());
@@ -147,8 +148,45 @@ async function checkSettings() {
     Settings.addCategory("Plugins", "enhanced", getPluginIcon());
     Settings.addCategory("About", "enhanced", getAboutIcon());
 
-    Settings.addButton("Open Themes Folder", "openthemesfolderBtn", SELECTORS.THEMES_CATEGORY);
-    Settings.addButton("Open Plugins Folder", "openpluginsfolderBtn", SELECTORS.PLUGINS_CATEGORY);
+    Settings.addButton("Import Theme", "openthemesfolderBtn", SELECTORS.THEMES_CATEGORY);
+    Settings.addButton("Import Plugin", "openpluginsfolderBtn", SELECTORS.PLUGINS_CATEGORY);
+
+    // Setup import buttons with FilePicker
+    Helpers.waitForElm("#openthemesfolderBtn").then(() => {
+        document.getElementById("openthemesfolderBtn")?.addEventListener("click", async () => {
+            try {
+                const result = await FilePicker.pickFiles({ readData: true });
+                if (result.files.length > 0) {
+                    const file = result.files[0];
+                    if (file.data && file.name) {
+                        const decodedData = decodeURIComponent(escape(atob(file.data)));
+                        await PlatformManager.current.writeFile(join(properties.themesPath, file.name), decodedData);
+                        location.reload();
+                    }
+                }
+            } catch (err) {
+                logger.error("Failed to pick theme file: " + err);
+            }
+        });
+    });
+
+    Helpers.waitForElm("#openpluginsfolderBtn").then(() => {
+        document.getElementById("openpluginsfolderBtn")?.addEventListener("click", async () => {
+            try {
+                const result = await FilePicker.pickFiles({ readData: true });
+                if (result.files.length > 0) {
+                    const file = result.files[0];
+                    if (file.data && file.name) {
+                        const decodedData = decodeURIComponent(escape(atob(file.data)));
+                        await PlatformManager.current.writeFile(join(properties.pluginsPath, file.name), decodedData);
+                        location.reload();
+                    }
+                }
+            } catch (err) {
+                logger.error("Failed to pick plugin file: " + err);
+            }
+        });
+    });
 
     writeAbout();
 
