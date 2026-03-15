@@ -19,16 +19,23 @@ import {
 } from "../constants";
 import ExtractMetaData from "../utils/ExtractMetaData";
 import { NodeJS } from 'capacitor-nodejs';
+import LogManager from "../core/LogManager";
 
 // Initialize platform for Capacitor
 PlatformManager.setPlatform(new CapacitorPlatform());
 
+// Hook console for logs menu
+LogManager.hookConsole();
+LogManager.addLog('INFO', 'Stremio Enhanced: Preload script initialized');
+
 // Listen for server logs and errors
 NodeJS.addListener('log', (data) => {
+    LogManager.addLog('INFO', `[Server] ${data.args.join(' ')}`);
     console.log('[Server]', ...data.args);
 });
 
 NodeJS.addListener('error', (data) => {
+    LogManager.addLog('ERROR', `[Server Error] ${data.args.join(' ')}`);
     console.error('[Server Error]', ...data.args);
     Helpers.showAlert('error', 'Server Error', data.args.join(' '), ['OK']);
 });
@@ -49,10 +56,33 @@ const ipcRenderer = {
     }
 };
 
-window.addEventListener("load", async () => {
+const init = async () => {
+    LogManager.addLog('INFO', 'Stremio Enhanced: Initialization started');
     // Initialize platform
     if (!PlatformManager.current) PlatformManager.setPlatform(new CapacitorPlatform());
     await PlatformManager.current.init();
+
+    // Inject CSS to hide fullscreen button
+    const style = document.createElement('style');
+    style.textContent = `
+        [title="Fullscreen"],
+        [title="Exit Fullscreen"],
+        button[aria-label="Fullscreen"],
+        .fullscreen-toggle {
+            display: none !important;
+        }
+    `;
+    if (document.head) {
+        document.head.appendChild(style);
+    } else {
+        const observer = new MutationObserver((mutations, obs) => {
+            if (document.head) {
+                document.head.appendChild(style);
+                obs.disconnect();
+            }
+        });
+        observer.observe(document, { childList: true, subtree: true });
+    }
 
     // Expose API for injected scripts
     (window as any).stremioEnhanced = {
@@ -74,7 +104,19 @@ window.addEventListener("load", async () => {
     window.addEventListener("hashchange", async () => {
         await checkSettings();
     });
-});
+
+    // Initial check
+    await checkSettings();
+
+    // Inject success toast
+    Helpers.createToast('enhanced-loaded', 'Stremio Enhanced', 'Stremio Enhanced Loaded', 'success');
+};
+
+if (document.readyState === 'loading') {
+    window.addEventListener("load", init);
+} else {
+    init();
+}
 
 // Settings page opened
 async function checkSettings() {
@@ -366,6 +408,16 @@ function writeAbout(): void {
                 false,
                 false
             );
+
+            // Add Open Logs button
+            Settings.addButton("Open Logs", "openLogsBtn", SELECTORS.ABOUT_CATEGORY);
+
+            // Attach listener
+            Helpers.waitForElm("#openLogsBtn").then(() => {
+                document.getElementById("openLogsBtn")?.addEventListener("click", () => {
+                    LogManager.showLogs();
+                });
+            });
         }
     }).catch(err => logger.error("Failed to write about section: " + err));
 }
