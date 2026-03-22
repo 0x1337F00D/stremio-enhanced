@@ -2,6 +2,8 @@ import { PlatformManager } from "../platform/PlatformManager";
 import { CapacitorPlatform } from "../platform/CapacitorPlatform";
 import Settings from "../core/Settings";
 import properties from "../core/Properties";
+
+declare const __APP_VERSION__: string;
 import ModManager from "../core/ModManager";
 import Helpers from "../utils/Helpers";
 import { getModsTabTemplate } from "../components/mods-tab/modsTab";
@@ -69,7 +71,9 @@ const init = async () => {
         [title="Fullscreen"],
         [title="Exit Fullscreen"],
         button[aria-label="Fullscreen"],
-        .fullscreen-toggle {
+        .fullscreen-toggle,
+        .button-Q_z8x[title="Fullscreen"],
+        .button-Q_z8x[title="Exit Fullscreen"] {
             display: none !important;
         }
     `;
@@ -441,7 +445,7 @@ function writeAbout(): void {
         if (aboutCategory) {
             // Hardcoded values for Android
             aboutCategory.innerHTML += getAboutCategoryTemplate(
-                "Android-v1.0.0",
+                `Android-v${(__APP_VERSION__)}`,
                 false,
                 false,
                 false

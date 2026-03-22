@@ -249,16 +249,25 @@ class Settings {
              if (navMenu && (div === navMenu || navMenu.contains(div))) continue;
 
              // The real settings panel contains large sections, so we can check if it has multiple children
-             if (div.children.length > 2) {
+             // Allow at least 1 child to match because on Android the panel might only have 1 or 2 sections visible initially
+             if (div.children.length >= 1) {
                  let matchCount = 0;
                  for (let i = 0; i < div.children.length; i++) {
                      if (keywords.some(k => div.children[i].textContent?.includes(k))) {
                          matchCount++;
                      }
                  }
+                 if (matchCount >= 1 && div.className.includes("sections-container")) return div;
                  if (matchCount >= 2) return div;
              }
         }
+
+        // Final fallback: just find the div containing the settings content
+        const contentDiv = document.querySelector('.settings-content-co5eU, [class*="settings-content"]');
+        if (contentDiv && contentDiv.firstElementChild) {
+            return contentDiv.firstElementChild;
+        }
+
         return null;
     }
 

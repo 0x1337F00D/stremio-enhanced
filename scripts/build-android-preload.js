@@ -21,6 +21,7 @@ const run = async () => {
                 '__dirname': '"/"',
                 'process.platform': '"browser"',
                 'process.env.APPDATA': '""',
+                '__APP_VERSION__': JSON.stringify(require('../package.json').version),
             }
         });
         console.log('Android preload script built successfully');
