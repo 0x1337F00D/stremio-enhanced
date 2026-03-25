@@ -16,6 +16,7 @@ import {
     SELECTORS,
     CLASSES,
     FILE_EXTENSIONS,
+    TIMEOUTS,
 } from "../constants";
 import ExtractMetaData from "../utils/ExtractMetaData";
 import { NodeJS } from 'capacitor-nodejs';
@@ -57,33 +58,37 @@ const ipcRenderer = {
     }
 };
 
+const SETTINGS_ROUTE = "#/settings";
+const PLAYER_ROUTE = "#/player";
+const STREAMING_SERVER_READY_TIMEOUT_MS = 15000;
+const FULLSCREEN_CONTROL_SELECTORS = [
+    '[title="Fullscreen"]',
+    '[title="Exit Fullscreen"]',
+    'button[aria-label="Fullscreen"]',
+    'button[aria-label="Exit Fullscreen"]',
+    '[class*="fullscreen-toggle"]',
+    '[class*="horizontal-nav-bar-container-"] [class*="buttons-container-"] > :not([class*="menu-button-container"]):not(.stremio-enhanced-pip-button)',
+];
+
+let fullscreenStyleInjected = false;
+let fullscreenObserverStarted = false;
+let settingsObserverStarted = false;
+let settingsCheckScheduled = false;
+let playerObserverStarted = false;
+let playerFeatureCheckScheduled = false;
+let streamingServerReadyPromise: Promise<void> | null = null;
+let streamingServerReloadScheduled = false;
+
 const init = async () => {
     LogManager.addLog('INFO', 'Stremio Enhanced: Initialization started');
     // Initialize platform
     if (!PlatformManager.current) PlatformManager.setPlatform(new CapacitorPlatform());
     await PlatformManager.current.init();
+    void ensureBundledStreamingServerReady();
 
-    // Inject CSS to hide fullscreen button
-    const style = document.createElement('style');
-    style.textContent = `
-        [title="Fullscreen"],
-        [title="Exit Fullscreen"],
-        button[aria-label="Fullscreen"],
-        .fullscreen-toggle {
-            display: none !important;
-        }
-    `;
-    if (document.head) {
-        document.head.appendChild(style);
-    } else {
-        const observer = new MutationObserver((mutations, obs) => {
-            if (document.head) {
-                document.head.appendChild(style);
-                obs.disconnect();
-            }
-        });
-        observer.observe(document, { childList: true, subtree: true });
-    }
+    installFullscreenHider();
+    observeSettingsUi();
+    observePlayerUi();
 
     // Expose API for injected scripts
     (window as any).stremioEnhanced = {
@@ -102,12 +107,19 @@ const init = async () => {
     await loadEnabledPlugins();
 
     // Handle navigation changes
-    window.addEventListener("hashchange", async () => {
-        await checkSettings();
+    window.addEventListener("hashchange", () => {
+        scheduleSettingsCheck();
+        schedulePlayerFeatureSync();
+    });
+
+    window.addEventListener("resize", () => {
+        hideFullscreenControls();
     });
 
     // Initial check
-    await checkSettings();
+    scheduleSettingsCheck();
+    schedulePlayerFeatureSync();
+    hideFullscreenControls();
 
     // Inject success toast
     Helpers.createToast('enhanced-loaded', 'Stremio Enhanced', 'Stremio Enhanced Loaded', 'success');
@@ -121,8 +133,8 @@ if (document.readyState === 'loading') {
 
 // Settings page opened
 async function checkSettings() {
-    if (!location.href.includes("#/settings")) return;
-    if (document.querySelector(`a[href="#settings-enhanced"]`)) return;
+    if (!location.href.includes(SETTINGS_ROUTE)) return;
+    if (document.getElementById("enhanced") || document.querySelector('[data-section="enhanced"]')) return;
 
     ModManager.addApplyThemeFunction();
 
@@ -148,45 +160,15 @@ async function checkSettings() {
     Settings.addCategory("Plugins", "enhanced", getPluginIcon());
     Settings.addCategory("About", "enhanced", getAboutIcon());
 
-    Settings.addButton("Import Theme", "openthemesfolderBtn", SELECTORS.THEMES_CATEGORY);
-    Settings.addButton("Import Plugin", "openpluginsfolderBtn", SELECTORS.PLUGINS_CATEGORY);
+    Settings.addButton("Import Theme", "importThemeBtn", SELECTORS.THEMES_CATEGORY);
+    Settings.addButton("Manage Themes Folder", "openthemesfolderBtn", SELECTORS.THEMES_CATEGORY);
+    Settings.addButton("Import Plugin", "importPluginBtn", SELECTORS.PLUGINS_CATEGORY);
+    Settings.addButton("Manage Plugins Folder", "openpluginsfolderBtn", SELECTORS.PLUGINS_CATEGORY);
 
-    // Setup import buttons with FilePicker
-    Helpers.waitForElm("#openthemesfolderBtn").then(() => {
-        document.getElementById("openthemesfolderBtn")?.addEventListener("click", async () => {
-            try {
-                const result = await FilePicker.pickFiles({ readData: true });
-                if (result.files.length > 0) {
-                    const file = result.files[0];
-                    if (file.data && file.name) {
-                        const decodedData = decodeURIComponent(escape(atob(file.data)));
-                        await PlatformManager.current.writeFile(join(properties.themesPath, file.name), decodedData);
-                        location.reload();
-                    }
-                }
-            } catch (err) {
-                logger.error("Failed to pick theme file: " + err);
-            }
-        });
-    });
-
-    Helpers.waitForElm("#openpluginsfolderBtn").then(() => {
-        document.getElementById("openpluginsfolderBtn")?.addEventListener("click", async () => {
-            try {
-                const result = await FilePicker.pickFiles({ readData: true });
-                if (result.files.length > 0) {
-                    const file = result.files[0];
-                    if (file.data && file.name) {
-                        const decodedData = decodeURIComponent(escape(atob(file.data)));
-                        await PlatformManager.current.writeFile(join(properties.pluginsPath, file.name), decodedData);
-                        location.reload();
-                    }
-                }
-            } catch (err) {
-                logger.error("Failed to pick plugin file: " + err);
-            }
-        });
-    });
+    setupImportButton("importThemeBtn", "theme");
+    setupImportButton("importPluginBtn", "plugin");
+    setupManagedFolderButton("openthemesfolderBtn", properties.themesPath);
+    setupManagedFolderButton("openpluginsfolderBtn", properties.pluginsPath);
 
     writeAbout();
 
@@ -250,12 +232,224 @@ async function checkSettings() {
 
     ModManager.togglePluginListener();
     ModManager.scrollListener();
-    // ModManager.openThemesFolder(); // Uses platform openPath which logs not supported on Android
-    // ModManager.openPluginsFolder();
+}
 
-    // Override open folder buttons to do something else or just log?
-    // ModManager.openThemesFolder uses PlatformManager.current.openPath
-    // In CapacitorPlatform, it just logs.
+async function ensureBundledStreamingServerReady(): Promise<void> {
+    if (streamingServerReadyPromise) {
+        await streamingServerReadyPromise;
+        return;
+    }
+
+    streamingServerReadyPromise = (async () => {
+        try {
+            await Promise.race([
+                NodeJS.whenReady(),
+                new Promise<never>((_, reject) => {
+                    window.setTimeout(() => {
+                        reject(new Error("Timed out waiting for the bundled streaming server."));
+                    }, STREAMING_SERVER_READY_TIMEOUT_MS);
+                })
+            ]);
+
+            LogManager.addLog("INFO", "Bundled streaming server is ready");
+            scheduleStreamingServerReload();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            LogManager.addLog("ERROR", `Bundled streaming server failed to become ready: ${message}`);
+            logger.error(`Bundled streaming server failed to become ready: ${message}`);
+            streamingServerReadyPromise = null;
+        }
+    })();
+
+    await streamingServerReadyPromise;
+}
+
+async function reloadStreamingServer(retryCount = 0): Promise<void> {
+    try {
+        await Helpers._eval(`core.transport.dispatch({ action: 'StreamingServer', args: { action: 'Reload' } });`);
+        logger.info("Stremio streaming server reloaded.");
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (retryCount < 3) {
+            window.setTimeout(() => {
+                void reloadStreamingServer(retryCount + 1);
+            }, TIMEOUTS.CORESTATE_RETRY_INTERVAL);
+            return;
+        }
+
+        logger.error(`Failed to reload bundled streaming server: ${message}`);
+        LogManager.addLog("ERROR", `Failed to reload bundled streaming server: ${message}`);
+    }
+}
+
+function scheduleStreamingServerReload(): void {
+    if (streamingServerReloadScheduled) return;
+    streamingServerReloadScheduled = true;
+
+    window.setTimeout(() => {
+        streamingServerReloadScheduled = false;
+        void reloadStreamingServer();
+    }, TIMEOUTS.SERVER_RELOAD_DELAY);
+}
+
+function scheduleSettingsCheck(): void {
+    if (settingsCheckScheduled) return;
+    settingsCheckScheduled = true;
+
+    window.setTimeout(async () => {
+        settingsCheckScheduled = false;
+        await checkSettings();
+    }, 100);
+}
+
+function observeSettingsUi(): void {
+    if (settingsObserverStarted) return;
+    settingsObserverStarted = true;
+
+    const startObserver = () => {
+        const observer = new MutationObserver(() => {
+            if (location.href.includes(SETTINGS_ROUTE) && !document.getElementById("enhanced")) {
+                scheduleSettingsCheck();
+            }
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+        });
+    };
+
+    if (document.body) {
+        startObserver();
+        return;
+    }
+
+    const bodyObserver = new MutationObserver((_, obs) => {
+        if (!document.body) return;
+        obs.disconnect();
+        startObserver();
+    });
+
+    bodyObserver.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+    });
+}
+
+function schedulePlayerFeatureSync(): void {
+    if (playerFeatureCheckScheduled) return;
+    playerFeatureCheckScheduled = true;
+
+    window.setTimeout(async () => {
+        playerFeatureCheckScheduled = false;
+        await syncPlayerFeatures();
+    }, 100);
+}
+
+function observePlayerUi(): void {
+    if (playerObserverStarted) return;
+    playerObserverStarted = true;
+
+    const startObserver = () => {
+        const observer = new MutationObserver(() => {
+            if (location.href.includes(PLAYER_ROUTE)) {
+                schedulePlayerFeatureSync();
+            }
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+        });
+    };
+
+    if (document.body) {
+        startObserver();
+        return;
+    }
+
+    const bodyObserver = new MutationObserver((_, obs) => {
+        if (!document.body) return;
+        obs.disconnect();
+        startObserver();
+    });
+
+    bodyObserver.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+    });
+}
+
+function installFullscreenHider(): void {
+    if (!fullscreenStyleInjected) {
+        const style = document.createElement("style");
+        style.id = "stremio-enhanced-fullscreen-style";
+        style.textContent = `
+            ${FULLSCREEN_CONTROL_SELECTORS.join(",\n            ")} {
+                display: none !important;
+                visibility: hidden !important;
+                pointer-events: none !important;
+            }
+        `;
+
+        const appendStyle = () => {
+            if (!document.head || document.getElementById(style.id)) return false;
+            document.head.appendChild(style);
+            fullscreenStyleInjected = true;
+            return true;
+        };
+
+        if (!appendStyle()) {
+            const observer = new MutationObserver((_, obs) => {
+                if (!appendStyle()) return;
+                obs.disconnect();
+            });
+            observer.observe(document.documentElement, { childList: true, subtree: true });
+        }
+    }
+
+    hideFullscreenControls();
+
+    if (fullscreenObserverStarted) return;
+    fullscreenObserverStarted = true;
+
+    const startObserver = () => {
+        const observer = new MutationObserver(() => {
+            hideFullscreenControls();
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["class", "title", "aria-label"],
+        });
+    };
+
+    if (document.body) {
+        startObserver();
+        return;
+    }
+
+    const bodyObserver = new MutationObserver((_, obs) => {
+        if (!document.body) return;
+        obs.disconnect();
+        startObserver();
+    });
+
+    bodyObserver.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+    });
+}
+
+function hideFullscreenControls(): void {
+    document.querySelectorAll<HTMLElement>(FULLSCREEN_CONTROL_SELECTORS.join(",")).forEach((element) => {
+        if (element.closest('[class*="menu-button-container"]') || element.classList.contains("stremio-enhanced-pip-button")) return;
+        element.style.display = "none";
+        element.style.visibility = "hidden";
+        element.style.pointerEvents = "none";
+    });
 }
 
 function initializeUserSettings(): void {
@@ -327,6 +521,158 @@ async function loadEnabledPlugins(): Promise<void> {
     } catch (e) {
         logger.error("Failed to load plugins: " + e);
     }
+}
+
+function setupImportButton(buttonId: string, type: "theme" | "plugin"): void {
+    Helpers.waitForElm(`#${buttonId}`).then(() => {
+        document.getElementById(buttonId)?.addEventListener("click", async () => {
+            await importModFile(type);
+        });
+    }).catch(err => logger.error(`Failed to setup ${type} import button: ${err}`));
+}
+
+function setupManagedFolderButton(buttonId: string, folderPath: string): void {
+    Helpers.waitForElm(`#${buttonId}`).then(() => {
+        document.getElementById(buttonId)?.addEventListener("click", async () => {
+            await PlatformManager.current.openPath(folderPath);
+        });
+    }).catch(err => logger.error(`Failed to setup folder button ${buttonId}: ${err}`));
+}
+
+async function importModFile(type: "theme" | "plugin"): Promise<void> {
+    try {
+        await FilePicker.requestPermissions();
+
+        const result = await FilePicker.pickFiles({ limit: 1 });
+        const file = result.files[0];
+        if (!file?.name || !file.path) {
+            return;
+        }
+
+        const expectedExtension = type === "theme" ? FILE_EXTENSIONS.THEME : FILE_EXTENSIONS.PLUGIN;
+        if (!file.name.endsWith(expectedExtension)) {
+            await Helpers.showAlert(
+                "warning",
+                "Unsupported File",
+                `Please choose a ${expectedExtension} file.`,
+                ["OK"]
+            );
+            return;
+        }
+
+        const content = await PlatformManager.current.readFile(file.path);
+        const destinationDirectory = type === "theme" ? properties.themesPath : properties.pluginsPath;
+        await PlatformManager.current.writeFile(join(destinationDirectory, file.name), content);
+        location.reload();
+    } catch (err) {
+        logger.error(`Failed to import ${type}: ${err}`);
+    }
+}
+
+async function syncPlayerFeatures(): Promise<void> {
+    if (!PlatformManager.current.isPictureInPictureSupported()) {
+        removePictureInPictureButton();
+        return;
+    }
+
+    if (!location.href.includes(PLAYER_ROUTE)) {
+        removePictureInPictureButton();
+        await PlatformManager.current.setPictureInPictureState(false);
+        return;
+    }
+
+    const video = document.querySelector("video") as HTMLVideoElement | null;
+    if (!video) {
+        removePictureInPictureButton();
+        await PlatformManager.current.setPictureInPictureState(false);
+        return;
+    }
+
+    bindPlayerPictureInPicture(video);
+    injectPictureInPictureButton();
+    await updatePictureInPictureState(video);
+}
+
+function bindPlayerPictureInPicture(video: HTMLVideoElement): void {
+    if (video.dataset.stremioEnhancedPipBound === "true") return;
+    video.dataset.stremioEnhancedPipBound = "true";
+
+    const syncState = () => {
+        void updatePictureInPictureState(video);
+    };
+
+    ["loadedmetadata", "play", "pause", "ended", "emptied", "resize"].forEach((eventName) => {
+        video.addEventListener(eventName, syncState);
+    });
+}
+
+async function updatePictureInPictureState(video?: HTMLVideoElement): Promise<void> {
+    if (!PlatformManager.current.isPictureInPictureSupported()) return;
+
+    const currentVideo = video ?? document.querySelector("video") as HTMLVideoElement | null;
+    if (!currentVideo || !location.href.includes(PLAYER_ROUTE)) {
+        await PlatformManager.current.setPictureInPictureState(false);
+        return;
+    }
+
+    const width = currentVideo.videoWidth || 16;
+    const height = currentVideo.videoHeight || 9;
+    const isActivePlayback = currentVideo.readyState > 0 && !currentVideo.paused && !currentVideo.ended;
+
+    await PlatformManager.current.setPictureInPictureState(isActivePlayback, width, height);
+}
+
+function injectPictureInPictureButton(): void {
+    const existingButton = document.getElementById("stremio-enhanced-pip-btn");
+    if (existingButton) return;
+
+    const buttonsContainer = getPictureInPictureButtonContainer();
+    if (!buttonsContainer) return;
+
+    const templateButton = buttonsContainer.firstElementChild as HTMLElement | null;
+    const templateIcon = templateButton?.querySelector("svg");
+
+    const button = document.createElement("button");
+    button.id = "stremio-enhanced-pip-btn";
+    button.type = "button";
+    button.title = "Picture in Picture";
+    button.setAttribute("aria-label", "Picture in Picture");
+    button.className = `${templateButton?.className ?? ""} stremio-enhanced-pip-button`.trim();
+    button.innerHTML = `
+        <svg class="${templateIcon?.getAttribute("class") ?? ""}" viewBox="0 0 24 24">
+            <path d="M19 7H5v10h14V7Zm0-2c1.11 0 2 .89 2 2v10c0 1.11-.89 2-2 2H5c-1.11 0-2-.89-2-2V7c0-1.11.89-2 2-2h14Zm-1 7h-6v4h6v-4Z" style="fill: currentColor;"></path>
+        </svg>
+    `;
+    button.addEventListener("click", async () => {
+        const currentVideo = document.querySelector("video") as HTMLVideoElement | null;
+        const success = await PlatformManager.current.enterPictureInPicture(
+            currentVideo?.videoWidth || 16,
+            currentVideo?.videoHeight || 9
+        );
+
+        if (!success) {
+            Helpers.createToast(
+                "pip-unavailable",
+                "Picture in Picture",
+                "Picture in Picture is not available on this device.",
+                "fail"
+            );
+        }
+    });
+
+    buttonsContainer.insertBefore(button, buttonsContainer.firstChild);
+}
+
+function removePictureInPictureButton(): void {
+    document.getElementById("stremio-enhanced-pip-btn")?.remove();
+}
+
+function getPictureInPictureButtonContainer(): HTMLElement | null {
+    const allContainers = Array.from(
+        document.querySelectorAll<HTMLElement>('[class*="horizontal-nav-bar-container-"] [class*="buttons-container-"]')
+    );
+
+    return allContainers.at(-1) ?? null;
 }
 
 async function browseMods(): Promise<void> {
@@ -449,11 +795,36 @@ function writeAbout(): void {
 
             // Add Open Logs button
             Settings.addButton("Open Logs", "openLogsBtn", SELECTORS.ABOUT_CATEGORY);
+            Settings.addButton("Export Logs", "exportLogsBtn", SELECTORS.ABOUT_CATEGORY);
+            Settings.addButton("Reload Streaming Server", "reloadStreamingServerBtn", SELECTORS.ABOUT_CATEGORY);
+            Settings.addButton("Open App Files", "openEnhancedFolderBtn", SELECTORS.ABOUT_CATEGORY);
 
             // Attach listener
             Helpers.waitForElm("#openLogsBtn").then(() => {
                 document.getElementById("openLogsBtn")?.addEventListener("click", () => {
                     LogManager.showLogs();
+                });
+            });
+
+            Helpers.waitForElm("#exportLogsBtn").then(() => {
+                document.getElementById("exportLogsBtn")?.addEventListener("click", async () => {
+                    const exportedPath = await LogManager.exportLogs();
+                    if (exportedPath) {
+                        await PlatformManager.current.openPath(join(properties.enhancedPath, "logs"));
+                    }
+                });
+            });
+
+            Helpers.waitForElm("#reloadStreamingServerBtn").then(() => {
+                document.getElementById("reloadStreamingServerBtn")?.addEventListener("click", async () => {
+                    await ensureBundledStreamingServerReady();
+                    scheduleStreamingServerReload();
+                });
+            });
+
+            Helpers.waitForElm("#openEnhancedFolderBtn").then(() => {
+                document.getElementById("openEnhancedFolderBtn")?.addEventListener("click", async () => {
+                    await PlatformManager.current.openPath(properties.enhancedPath);
                 });
             });
         }

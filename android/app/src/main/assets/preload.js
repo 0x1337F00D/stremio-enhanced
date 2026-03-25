@@ -1780,9 +1780,6 @@
     }
   };
 
-  // src/utils/Helpers.ts
-  var import_electron = __require("electron");
-
   // src/utils/logger.browser.ts
   var BrowserLogger = class {
     info(message, ...meta) {
@@ -1955,8 +1952,12 @@
         message,
         buttons
       };
+      if (typeof window !== "undefined" && typeof window.Capacitor !== "undefined" && typeof window.alert === "function") {
+        window.alert([title, message].filter(Boolean).join("\n\n"));
+        return 0;
+      }
       try {
-        const response = await import_electron.dialog.showMessageBox(this.mainWindow, options);
+        const response = await __require("electron").dialog.showMessageBox(this.mainWindow, options);
         return response.response;
       } catch (error) {
         logger_browser_default.error("Error displaying alert: " + error.message);
@@ -3154,30 +3155,25 @@
     console.error("[Server Error]", ...data.args);
     Helpers_default.showAlert("error", "Server Error", data.args.join(" "), ["OK"]);
   });
+  var SETTINGS_ROUTE = "#/settings";
+  var FULLSCREEN_CONTROL_SELECTORS = [
+    '[title="Fullscreen"]',
+    '[title="Exit Fullscreen"]',
+    'button[aria-label="Fullscreen"]',
+    'button[aria-label="Exit Fullscreen"]',
+    '[class*="fullscreen-toggle"]',
+    '[class*="horizontal-nav-bar-container-"] [class*="buttons-container-"] > :not([class*="menu-button-container"])'
+  ];
+  var fullscreenStyleInjected = false;
+  var fullscreenObserverStarted = false;
+  var settingsObserverStarted = false;
+  var settingsCheckScheduled = false;
   var init = async () => {
     LogManager_default.addLog("INFO", "Stremio Enhanced: Initialization started");
     if (!PlatformManager.current) PlatformManager.setPlatform(new CapacitorPlatform());
     await PlatformManager.current.init();
-    const style = document.createElement("style");
-    style.textContent = `
-        [title="Fullscreen"],
-        [title="Exit Fullscreen"],
-        button[aria-label="Fullscreen"],
-        .fullscreen-toggle {
-            display: none !important;
-        }
-    `;
-    if (document.head) {
-      document.head.appendChild(style);
-    } else {
-      const observer = new MutationObserver((mutations, obs) => {
-        if (document.head) {
-          document.head.appendChild(style);
-          obs.disconnect();
-        }
-      });
-      observer.observe(document, { childList: true, subtree: true });
-    }
+    installFullscreenHider();
+    observeSettingsUi();
     window.stremioEnhanced = {
       applyTheme: async (theme) => {
         await applyUserTheme();
@@ -3187,9 +3183,13 @@
     await applyUserTheme();
     await loadEnabledPlugins();
     window.addEventListener("hashchange", async () => {
-      await checkSettings();
+      scheduleSettingsCheck();
     });
-    await checkSettings();
+    window.addEventListener("resize", () => {
+      hideFullscreenControls();
+    });
+    scheduleSettingsCheck();
+    hideFullscreenControls();
     Helpers_default.createToast("enhanced-loaded", "Stremio Enhanced", "Stremio Enhanced Loaded", "success");
   };
   if (document.readyState === "loading") {
@@ -3198,8 +3198,8 @@
     init();
   }
   async function checkSettings() {
-    if (!location.href.includes("#/settings")) return;
-    if (document.querySelector(`a[href="#settings-enhanced"]`)) return;
+    if (!location.href.includes(SETTINGS_ROUTE)) return;
+    if (document.getElementById("enhanced") || document.querySelector('[data-section="enhanced"]')) return;
     ModManager_default.addApplyThemeFunction();
     const themesPath = Properties_default.themesPath;
     const pluginsPath = Properties_default.pluginsPath;
@@ -3270,6 +3270,103 @@
     }
     ModManager_default.togglePluginListener();
     ModManager_default.scrollListener();
+  }
+  function scheduleSettingsCheck() {
+    if (settingsCheckScheduled) return;
+    settingsCheckScheduled = true;
+    window.setTimeout(async () => {
+      settingsCheckScheduled = false;
+      await checkSettings();
+    }, 100);
+  }
+  function observeSettingsUi() {
+    if (settingsObserverStarted) return;
+    settingsObserverStarted = true;
+    const startObserver = () => {
+      const observer = new MutationObserver(() => {
+        if (location.href.includes(SETTINGS_ROUTE) && !document.getElementById("enhanced")) {
+          scheduleSettingsCheck();
+        }
+      });
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+    };
+    if (document.body) {
+      startObserver();
+      return;
+    }
+    const bodyObserver = new MutationObserver((_, obs) => {
+      if (!document.body) return;
+      obs.disconnect();
+      startObserver();
+    });
+    bodyObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+  }
+  function installFullscreenHider() {
+    if (!fullscreenStyleInjected) {
+      const style = document.createElement("style");
+      style.id = "stremio-enhanced-fullscreen-style";
+      style.textContent = `
+            ${FULLSCREEN_CONTROL_SELECTORS.join(",\n            ")} {
+                display: none !important;
+                visibility: hidden !important;
+                pointer-events: none !important;
+            }
+        `;
+      const appendStyle = () => {
+        if (!document.head || document.getElementById(style.id)) return false;
+        document.head.appendChild(style);
+        fullscreenStyleInjected = true;
+        return true;
+      };
+      if (!appendStyle()) {
+        const observer = new MutationObserver((_, obs) => {
+          if (!appendStyle()) return;
+          obs.disconnect();
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+      }
+    }
+    hideFullscreenControls();
+    if (fullscreenObserverStarted) return;
+    fullscreenObserverStarted = true;
+    const startObserver = () => {
+      const observer = new MutationObserver(() => {
+        hideFullscreenControls();
+      });
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["class", "title", "aria-label"]
+      });
+    };
+    if (document.body) {
+      startObserver();
+      return;
+    }
+    const bodyObserver = new MutationObserver((_, obs) => {
+      if (!document.body) return;
+      obs.disconnect();
+      startObserver();
+    });
+    bodyObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+  }
+  function hideFullscreenControls() {
+    document.querySelectorAll(FULLSCREEN_CONTROL_SELECTORS.join(",")).forEach((element) => {
+      if (element.closest('[class*="menu-button-container"]')) return;
+      element.style.display = "none";
+      element.style.visibility = "hidden";
+      element.style.pointerEvents = "none";
+    });
   }
   function initializeUserSettings() {
     const defaults = {

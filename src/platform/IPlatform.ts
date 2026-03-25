@@ -19,6 +19,9 @@ export interface IPlatform {
     // Shell / System
     openPath(path: string): Promise<void>;
     openExternal(url: string): Promise<void>;
+    isPictureInPictureSupported(): boolean;
+    enterPictureInPicture(width?: number, height?: number): Promise<boolean>;
+    setPictureInPictureState(enabled: boolean, width?: number, height?: number): Promise<void>;
 
     // Paths
     getThemesPath(): string;

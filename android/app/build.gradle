@@ -1,5 +1,26 @@
 apply plugin: 'com.android.application'
 
+def repoRoot = rootProject.projectDir.parentFile
+
+tasks.register("buildAndroidPreload", Exec) {
+    workingDir repoRoot
+    commandLine "node", "scripts/build-android-preload.js"
+    inputs.dir(new File(repoRoot, "src"))
+    inputs.file(new File(repoRoot, "package.json"))
+    inputs.file(new File(repoRoot, "scripts/build-android-preload.js"))
+    outputs.file(new File(repoRoot, "android/app/src/main/assets/preload.js"))
+}
+
+tasks.register("buildAndroidNodejs", Exec) {
+    workingDir repoRoot
+    commandLine "node", "scripts/download-server.js"
+    inputs.file(new File(repoRoot, "scripts/download-server.js"))
+    inputs.file(new File(repoRoot, "scripts/templates/android-nodejs-wrapper.js"))
+    inputs.file(new File(repoRoot, "src/constants/index.ts"))
+    outputs.dir(new File(repoRoot, "dist/nodejs"))
+    outputs.dir(new File(repoRoot, "android/app/src/main/assets/public/nodejs"))
+}
+
 android {
     namespace = "com.revenge977.stremioenhanced"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -41,6 +62,9 @@ dependencies {
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
 }
+
+preBuild.dependsOn(tasks.named("buildAndroidPreload"))
+preBuild.dependsOn(tasks.named("buildAndroidNodejs"))
 
 apply from: 'capacitor.build.gradle'
 

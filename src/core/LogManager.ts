@@ -1,3 +1,7 @@
+import { join } from "path";
+import { PlatformManager } from "../platform/PlatformManager";
+import properties from "./Properties";
+
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
 
 interface LogEntry {
@@ -59,6 +63,22 @@ class LogManager {
         this.logs.push({ timestamp, level, message });
         if (this.logs.length > this.maxLogs) {
             this.logs.shift();
+        }
+    }
+
+    public async exportLogs(): Promise<string | null> {
+        try {
+            const logsDir = join(properties.enhancedPath, "logs");
+            if (!await PlatformManager.current.exists(logsDir)) {
+                await PlatformManager.current.mkdir(logsDir);
+            }
+
+            const fileName = `stremio-enhanced-${new Date().toISOString().replace(/[:.]/g, "-")}.log`;
+            const filePath = join(logsDir, fileName);
+            await PlatformManager.current.writeFile(filePath, this.serializeLogs());
+            return filePath;
+        } catch {
+            return null;
         }
     }
 
@@ -129,6 +149,17 @@ class LogManager {
             cursor: pointer;
         `;
 
+        const exportBtn = document.createElement('button');
+        exportBtn.textContent = 'Export';
+        exportBtn.style.cssText = `
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+        `;
+
         const closeBtn = document.createElement('button');
         closeBtn.textContent = 'Close';
         closeBtn.style.cssText = `
@@ -142,6 +173,7 @@ class LogManager {
 
         controls.appendChild(filterSelect);
         controls.appendChild(copyBtn);
+        controls.appendChild(exportBtn);
         controls.appendChild(closeBtn);
         header.appendChild(title);
         header.appendChild(controls);
@@ -182,7 +214,7 @@ class LogManager {
         filterSelect.addEventListener('change', renderLogs);
 
         copyBtn.addEventListener('click', () => {
-            const text = this.logs.map(l => `[${l.timestamp}] [${l.level}] ${l.message}`).join('\n');
+            const text = this.serializeLogs();
             const textArea = document.createElement("textarea");
             textArea.value = text;
             document.body.appendChild(textArea);
@@ -195,9 +227,28 @@ class LogManager {
             setTimeout(() => copyBtn.textContent = originalText, 2000);
         });
 
+        exportBtn.addEventListener('click', async () => {
+            const originalText = exportBtn.textContent;
+            exportBtn.textContent = 'Exporting...';
+
+            const exportedPath = await this.exportLogs();
+            if (exportedPath) {
+                exportBtn.textContent = 'Exported!';
+                await PlatformManager.current.openPath(join(properties.enhancedPath, "logs"));
+            } else {
+                exportBtn.textContent = 'Failed';
+            }
+
+            setTimeout(() => exportBtn.textContent = originalText, 2000);
+        });
+
         closeBtn.addEventListener('click', () => {
             overlay.remove();
         });
+    }
+
+    private serializeLogs(): string {
+        return this.logs.map(log => `[${log.timestamp}] [${log.level}] ${log.message}`).join('\n');
     }
 
     private escapeHtml(unsafe: string): string {

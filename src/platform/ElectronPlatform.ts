@@ -65,6 +65,18 @@ export class ElectronPlatform implements IPlatform {
         await shell.openExternal(url);
     }
 
+    isPictureInPictureSupported(): boolean {
+        return false;
+    }
+
+    async enterPictureInPicture(_width?: number, _height?: number): Promise<boolean> {
+        return false;
+    }
+
+    async setPictureInPictureState(_enabled: boolean, _width?: number, _height?: number): Promise<void> {
+        return;
+    }
+
     getThemesPath(): string {
         return this.themesPath;
     }

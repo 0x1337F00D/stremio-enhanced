@@ -1,4 +1,4 @@
-import { dialog, BrowserWindow } from "electron";
+import type { BrowserWindow, MessageBoxOptions } from "electron";
 import logger from "./logger";
 import { SELECTORS, TIMEOUTS } from "../constants";
 import { getToastTemplate } from "../components/toast/toast";
@@ -26,14 +26,24 @@ class Helpers {
         message: string, 
         buttons: string[]
     ): Promise<number> {
-        const options: Electron.MessageBoxOptions = {
+        const options: MessageBoxOptions = {
             type: alertType,
             title,
             message,
             buttons
         };
+
+        if (
+            typeof window !== "undefined" &&
+            typeof (window as typeof window & { Capacitor?: unknown }).Capacitor !== "undefined" &&
+            typeof window.alert === "function"
+        ) {
+            window.alert([title, message].filter(Boolean).join("\n\n"));
+            return 0;
+        }
         
         try {
+            const { dialog } = await import("electron");
             const response = await dialog.showMessageBox(this.mainWindow!, options);
             return response.response;
         } catch (error) {
