@@ -184,7 +184,7 @@ async function checkSettings() {
         document.querySelector(SELECTORS.THEMES_CATEGORY)?.appendChild(defaultThemeContainer);
 
         // Add installed themes
-        for (const theme of themesList) {
+        await Promise.all(themesList.map(async (theme) => {
             try {
                 const themePath = join(themesPath, theme);
                 const content = await PlatformManager.current.readFile(themePath);
@@ -205,7 +205,7 @@ async function checkSettings() {
             } catch (e) {
                 logger.error(`Failed to load theme metadata for ${theme}: ${e}`);
             }
-        }
+        }));
     }).catch(err => logger.error("Failed to setup themes: " + err));
 
     // Add plugins to settings
