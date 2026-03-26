@@ -1,5 +1,5 @@
 import { PlatformManager } from "../platform/PlatformManager";
-import { CapacitorPlatform } from "../platform/CapacitorPlatform";
+
 import Settings from "../core/Settings";
 import properties from "../core/Properties";
 import ModManager from "../core/ModManager";
@@ -24,7 +24,7 @@ import LogManager from "../core/LogManager";
 import { FilePicker } from '@capawesome/capacitor-file-picker';
 
 // Initialize platform for Capacitor
-PlatformManager.setPlatform(new CapacitorPlatform());
+PlatformManager.init();
 
 // Hook console for logs menu
 LogManager.hookConsole();
@@ -82,7 +82,7 @@ let streamingServerReloadScheduled = false;
 const init = async () => {
     LogManager.addLog('INFO', 'Stremio Enhanced: Initialization started');
     // Initialize platform
-    if (!PlatformManager.current) PlatformManager.setPlatform(new CapacitorPlatform());
+    if (!PlatformManager.current) PlatformManager.init();
     await PlatformManager.current.init();
     void ensureBundledStreamingServerReady();
 
