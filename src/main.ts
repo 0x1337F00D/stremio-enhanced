@@ -72,12 +72,10 @@ async function createWindow() {
             // Security Note: These settings are required for the plugin/theme system
             // to work properly. The app loads web.stremio.com and needs to:
             // 1. Make cross-origin requests to local streaming server (webSecurity: false)
-            // 2. Access Node.js APIs for file operations (nodeIntegration: true)
-            // 3. Share context between preload and renderer (contextIsolation: false)
-            // TODO: Consider implementing a contextBridge-based architecture for better security
             webSecurity: false,
-            nodeIntegration: true,
-            contextIsolation: false,
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: false,
             // Additional security hardening
             allowRunningInsecureContent: false,
             experimentalFeatures: false,
@@ -174,6 +172,68 @@ async function createWindow() {
         return existsSync(transparencyFlagPath);
     });
     
+    // File and system operations IPC handlers
+    ipcMain.handle(IPC_CHANNELS.READ_FILE, async (_, path: string) => {
+        const { readFile } = await import("fs/promises");
+        return readFile(path, "utf-8");
+    });
+
+    ipcMain.handle(IPC_CHANNELS.WRITE_FILE, async (_, path: string, content: string) => {
+        const { writeFile } = await import("fs/promises");
+        return writeFile(path, content, "utf-8");
+    });
+
+    ipcMain.handle(IPC_CHANNELS.READ_DIR, async (_, path: string) => {
+        const { readdir } = await import("fs/promises");
+        return readdir(path);
+    });
+
+    ipcMain.handle(IPC_CHANNELS.EXISTS, (_, path: string) => {
+        return existsSync(path);
+    });
+
+    ipcMain.handle(IPC_CHANNELS.UNLINK, async (_, path: string) => {
+        const { unlink } = await import("fs/promises");
+        return unlink(path);
+    });
+
+    ipcMain.handle(IPC_CHANNELS.MKDIR, async (_, path: string) => {
+        const { mkdir } = await import("fs/promises");
+        return mkdir(path, { recursive: true }).then(() => {});
+    });
+
+    ipcMain.handle(IPC_CHANNELS.STAT, async (_, path: string) => {
+        const { stat } = await import("fs/promises");
+        const stats = await stat(path);
+        return {
+            isFile: stats.isFile(),
+            isDirectory: stats.isDirectory()
+        };
+    });
+
+    ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (_, path: string) => {
+        await shell.openPath(path);
+    });
+
+    ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_, url: string) => {
+        await shell.openExternal(url);
+    });
+
+    ipcMain.handle(IPC_CHANNELS.GET_PATHS, () => {
+        const { homedir } = require("os");
+        const baseDataPath = process.platform === "win32"
+            ? process.env.APPDATA || join(homedir(), "AppData", "Roaming")
+            : process.platform === "darwin"
+                ? join(homedir(), "Library", "Application Support")
+                : join(homedir(), ".config");
+
+        const enhancedPath = join(baseDataPath, "stremio-enhanced");
+        const themesPath = join(enhancedPath, "themes");
+        const pluginsPath = join(enhancedPath, "plugins");
+
+        return { enhancedPath, themesPath, pluginsPath };
+    });
+
     // Opens links in external browser instead of opening them in the Electron app.
     mainWindow.webContents.setWindowOpenHandler((edata:any) => {
         shell.openExternal(edata.url);
