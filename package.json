@@ -5,19 +5,20 @@
 	"main": "./dist/main.js",
 	"scripts": {
 		"dist": "tsc && node ./copyComponents.js",
-			"watch": "tsc -w",
-			"lint": "cross-env ESLINT_USE_FLAT_CONFIG=false eslint -c .eslintrc.json --ext .ts ./src",
-			"dev": "node -e \"console.clear()\" && npm run dist && npx electron --log-level=3 ./dist/main.js --devtools",
-			"build:android:nodejs": "node scripts/download-server.js",
-			"build:android:preload": "node scripts/build-android-preload.js",
-			"build": "npm run dist && electron-builder",
+		"watch": "tsc -w",
+		"lint": "cross-env ESLINT_USE_FLAT_CONFIG=false eslint -c .eslintrc.json --ext .ts ./src",
+		"dev": "node -e \"console.clear()\" && npm run dist && npx electron --log-level=3 ./dist/main.js --devtools",
+		"build:android:nodejs": "node scripts/download-server.js",
+		"build:android:preload": "node scripts/build-android-preload.js",
+		"build": "npm run dist && electron-builder",
 		"build:linux:x64": "npm run dist && electron-builder --linux --x64",
 		"build:linux:arm64": "npm run dist && electron-builder --linux --arm64",
 		"build:mac:x64": "npm run dist && electron-builder --mac --x64",
 		"build:mac:arm64": "npm run dist && electron-builder --mac --arm64",
 		"build:win:x64": "npm run dist && electron-builder --win --x64",
 		"build:win:arm64": "npm run dist && electron-builder --win --arm64",
-		"build:win": "npm run dist && electron-builder --win"
+		"build:win": "npm run dist && electron-builder --win",
+		"test": "jest"
 	},
 	"repository": "https://github.com/REVENGE977/stremio-enhanced.git",
 	"publish": {
@@ -29,6 +30,7 @@
 	"devDependencies": {
 		"@capacitor/android": "^8.0.1",
 		"@capacitor/cli": "^8.0.1",
+		"@types/jest": "^30.0.0",
 		"@types/unzipper": "^0.10.11",
 		"@typescript-eslint/eslint-plugin": "^8.54.0",
 		"@typescript-eslint/parser": "^8.54.0",
@@ -36,7 +38,9 @@
 		"electron": "^39.2.7",
 		"electron-builder": "^26.4.0",
 		"esbuild": "^0.27.2",
+		"jest": "^30.3.0",
 		"path-browserify": "^1.0.1",
+		"ts-jest": "^29.4.6",
 		"typescript": "^5.7.2"
 	},
 	"dependencies": {

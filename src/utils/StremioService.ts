@@ -12,6 +12,20 @@ import { TIMEOUTS, URLS } from "../constants/index";
 class StremioService {
     private static logger = getLogger("StremioService");
     private static execFileAsync = promisify(execFile);
+    public baseUrl = "https://v3-cinemeta.strem.io";
+
+    public async getMeta(type: string, id: string): Promise<any> {
+        try {
+            const response = await fetch(`${this.baseUrl}/meta/${type}/${id}.json`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return await response.json();
+        } catch (error) {
+            console.error('Error fetching meta:', error);
+            throw error;
+        }
+    }
 
     public static start(): Promise<void> {
         return new Promise((resolve, reject) => {
