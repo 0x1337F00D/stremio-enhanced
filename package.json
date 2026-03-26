@@ -30,6 +30,7 @@
 	"devDependencies": {
 		"@capacitor/android": "^8.0.1",
 		"@capacitor/cli": "^8.0.1",
+		"@types/node": "^25.5.0",
 		"@types/unzipper": "^0.10.11",
 		"@typescript-eslint/eslint-plugin": "^8.54.0",
 		"@typescript-eslint/parser": "^8.54.0",
