@@ -132,10 +132,22 @@ if (document.readyState === 'loading') {
 }
 
 // Settings page opened
+let isCheckingSettings = false;
 async function checkSettings() {
     if (!location.href.includes(SETTINGS_ROUTE)) return;
     if (document.getElementById("enhanced") || document.querySelector('[data-section="enhanced"]')) return;
 
+    if (isCheckingSettings) return;
+    isCheckingSettings = true;
+
+    try {
+        await doCheckSettings();
+    } finally {
+        isCheckingSettings = false;
+    }
+}
+
+async function doCheckSettings() {
     ModManager.addApplyThemeFunction();
 
     const themesPath = properties.themesPath;
@@ -539,7 +551,10 @@ function setupManagedFolderButton(buttonId: string, folderPath: string): void {
     }).catch(err => logger.error(`Failed to setup folder button ${buttonId}: ${err}`));
 }
 
+let isImporting = false;
 async function importModFile(type: "theme" | "plugin"): Promise<void> {
+    if (isImporting) return;
+    isImporting = true;
     try {
         await FilePicker.requestPermissions();
 
@@ -563,9 +578,14 @@ async function importModFile(type: "theme" | "plugin"): Promise<void> {
         const content = await PlatformManager.current.readFile(file.path);
         const destinationDirectory = type === "theme" ? properties.themesPath : properties.pluginsPath;
         await PlatformManager.current.writeFile(join(destinationDirectory, file.name), content);
-        location.reload();
+
+        // Use a timeout to avoid location.reload() triggering loop issues with Capacitor Activity Results
+        setTimeout(() => location.reload(), 100);
     } catch (err) {
         logger.error(`Failed to import ${type}: ${err}`);
+    } finally {
+        // slight delay before unlocking to avoid double click events after focus returns
+        setTimeout(() => { isImporting = false; }, 500);
     }
 }
 

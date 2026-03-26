@@ -66,7 +66,9 @@ export class CapacitorPlatform implements IPlatform {
         try {
             const result = await Filesystem.readdir({ path, directory });
             return result.files.map(file => file.name);
-        } catch {
+        } catch (error: any) {
+            if (error?.message?.includes("does not exist")) return [];
+            console.error("Failed to readdir:", error);
             return [];
         }
     }
@@ -128,8 +130,14 @@ export class CapacitorPlatform implements IPlatform {
     }
 
     async readdir(path: string): Promise<string[]> {
-        const result = await Filesystem.readdir(this.getFileOptions(path));
-        return result.files.map(f => f.name);
+        try {
+            const result = await Filesystem.readdir(this.getFileOptions(path));
+            return result.files.map(f => f.name);
+        } catch (error: any) {
+            if (error?.message?.includes("does not exist")) return [];
+            console.error("Failed to readdir:", error);
+            return [];
+        }
     }
 
     async exists(path: string): Promise<boolean> {
@@ -151,8 +159,10 @@ export class CapacitorPlatform implements IPlatform {
                 ...this.getFileOptions(path),
                 recursive: true
             });
-        } catch {
+        } catch (error: any) {
             // Ignore error if directory already exists
+            if (error?.message?.includes("already exists")) return;
+            console.error("Failed to create directory:", error);
         }
     }
 

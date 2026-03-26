@@ -45,16 +45,25 @@ class Settings {
                 // Try to find shortcuts nav to insert after, or just append
                 const shortcutsNav = this.getNavShortcutItem();
 
-                if (!nav) return;
+                if (!nav) {
+                    this.logger.error("nav menu is still null after wait");
+                    return;
+                }
                 if(document.querySelector(`[data-section="${sectionId}"]`)) return; // Nav item already exists
 
                 const enhancedNavContainer = document.createElement("div");
                 enhancedNavContainer.innerHTML = getEnhancedNav();
                 
-                if (shortcutsNav) {
-                    nav.insertBefore(enhancedNavContainer, shortcutsNav.nextSibling);
+                // extract the actual element if getEnhancedNav() returns a string that contains a single div
+                let childToAppend = enhancedNavContainer;
+                if (enhancedNavContainer.children.length === 1) {
+                    childToAppend = enhancedNavContainer.children[0] as HTMLDivElement;
+                }
+
+                if (shortcutsNav && shortcutsNav.parentNode === nav) {
+                    nav.insertBefore(childToAppend, shortcutsNav.nextSibling);
                 } else {
-                    nav.appendChild(enhancedNavContainer);
+                    nav.appendChild(childToAppend);
                 }
             }).catch(err => this.logger.error(`Failed to add nav: ${err}`));
         }).catch(err => this.logger.error(`Failed to add section: ${err}`));
@@ -219,7 +228,7 @@ class Settings {
                  let parent = link.parentElement;
                  while(parent) {
                      const found = keywords.filter(k => parent!.querySelector(`[title="${k}"]`));
-                     if (found.length >= 2) {
+                     if (found.length >= 1) { // Changed to 1 to be more permissive on mobile
                          return parent;
                      }
                      parent = parent.parentElement;
@@ -249,14 +258,14 @@ class Settings {
              if (navMenu && (div === navMenu || navMenu.contains(div))) continue;
 
              // The real settings panel contains large sections, so we can check if it has multiple children
-             if (div.children.length > 2) {
+             if (div.children.length >= 2) { // Changed to >= 2 to be more permissive on mobile
                  let matchCount = 0;
                  for (let i = 0; i < div.children.length; i++) {
                      if (keywords.some(k => div.children[i].textContent?.includes(k))) {
                          matchCount++;
                      }
                  }
-                 if (matchCount >= 2) return div;
+                 if (matchCount >= 1) return div; // Changed to >= 1 to be more permissive on mobile
              }
         }
         return null;
@@ -349,7 +358,7 @@ class Settings {
     private static waitForSettingsPanel(): Promise<void> {
         return new Promise((resolve) => {
             let retries = 0;
-            const maxRetries = 20; // 10 seconds
+            const maxRetries = 40; // 20 seconds
             const interval = setInterval(() => {
                 if (this.getSettingsPanel()) {
                     clearInterval(interval);
@@ -369,7 +378,7 @@ class Settings {
     private static waitForNavMenu(): Promise<void> {
          return new Promise((resolve) => {
             let retries = 0;
-            const maxRetries = 20;
+            const maxRetries = 40; // 20 seconds
             const interval = setInterval(() => {
                 if (this.getNavMenu()) {
                     clearInterval(interval);
