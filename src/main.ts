@@ -1,5 +1,5 @@
 import { join } from "path";
-import { mkdirSync, existsSync, writeFileSync, unlinkSync } from "fs";
+import { existsSync, writeFileSync, unlinkSync, promises } from "fs";
 import helpers from './utils/Helpers';
 import Updater from "./core/Updater";
 import Properties from "./core/Properties";
@@ -226,15 +226,11 @@ app.on("ready", async () => {
     try {
         const basePath = Properties.enhancedPath;
         
-        if (!existsSync(basePath)) {
-            mkdirSync(basePath, { recursive: true });
-        }
-        if (!existsSync(Properties.themesPath)) {
-            mkdirSync(Properties.themesPath, { recursive: true });
-        }
-        if (!existsSync(Properties.pluginsPath)) {
-            mkdirSync(Properties.pluginsPath, { recursive: true });
-        }
+        await Promise.all([
+            promises.mkdir(basePath, { recursive: true }),
+            promises.mkdir(Properties.themesPath, { recursive: true }),
+            promises.mkdir(Properties.pluginsPath, { recursive: true })
+        ]);
     } catch (err) {
         logger.error("Failed to create necessary directories: " + err);
     }
