@@ -18,7 +18,8 @@
 		"build:mac:arm64": "npm run dist && electron-builder --mac --arm64",
 		"build:win:x64": "npm run dist && electron-builder --win --x64",
 		"build:win:arm64": "npm run dist && electron-builder --win --arm64",
-		"build:win": "npm run dist && electron-builder --win"
+		"build:win": "npm run dist && electron-builder --win",
+		"test": "vitest run"
 	},
 	"repository": "https://github.com/REVENGE977/stremio-enhanced.git",
 	"publish": {
