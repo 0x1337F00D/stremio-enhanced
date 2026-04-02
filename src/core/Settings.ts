@@ -10,90 +10,53 @@ import { SELECTORS, CLASSES, STORAGE_KEYS } from "../constants";
 class Settings {
     private static logger = getLogger("Settings");
 
-    private static getCategoryKey(sectionId: string, title: string): string {
-        return `${sectionId}:${title.trim().toLowerCase()}`;
-    }
-
-    private static getExistingCategory(section: HTMLElement, sectionId: string, title: string): HTMLElement | null {
-        const categoryKey = this.getCategoryKey(sectionId, title);
-        const categoryByKey = section.querySelector<HTMLElement>(`[data-stremio-enhanced-category="${categoryKey}"]`);
-        if (categoryByKey) return categoryByKey;
-
-        return Array.from(section.children).find((child): child is HTMLElement => {
-            if (!(child instanceof HTMLElement)) return false;
-            const label = child.querySelector(SELECTORS.CATEGORY_LABEL);
-            return label?.textContent?.trim() === title;
-        }) ?? null;
-    }
-
-    private static ensureNavItem(sectionId: string, title: string): void {
-        this.waitForNavMenu().then(() => {
-            const nav = this.getNavMenu();
-            const shortcutsNav = this.getNavShortcutItem();
-
-            if (!nav) {
-                this.logger.error("nav menu is still null after wait");
-                return;
-            }
-
-            const existingNav = nav.querySelector<HTMLElement>(`[data-section="${sectionId}"]`);
-            if (existingNav) {
-                existingNav.setAttribute("title", title);
-                existingNav.textContent = title;
-                return;
-            }
-
-            const enhancedNavContainer = document.createElement("div");
-            enhancedNavContainer.innerHTML = getEnhancedNav();
-
-            const childToAppend = (enhancedNavContainer.firstElementChild as HTMLElement | null) ?? enhancedNavContainer;
-            childToAppend.setAttribute("data-section", sectionId);
-            childToAppend.setAttribute("title", title);
-            childToAppend.textContent = title;
-
-            if (shortcutsNav && shortcutsNav.parentNode === nav) {
-                nav.insertBefore(childToAppend, shortcutsNav.nextSibling);
-            } else {
-                nav.appendChild(childToAppend);
-            }
-        }).catch(err => this.logger.error(`Failed to add nav: ${err}`));
-    }
-
     /**
      * Add a new section to the settings panel
      */
     public static addSection(sectionId: string, title: string): void {
         this.waitForSettingsPanel().then(() => {
+            this.logger.info(`Adding section: ${sectionId} with title: ${title}`);
+
             const settingsPanel = this.getSettingsPanel();
             if (!settingsPanel) return;
 
-            let sectionContainer = document.getElementById(sectionId) as HTMLElement | null;
+            const sectionElement = this.getExistingSection(settingsPanel);
+            const labelElement = this.getExistingSectionLabel(sectionElement);
 
-            if (!sectionContainer) {
-                this.logger.info(`Adding section: ${sectionId} with title: ${title}`);
+            if (!sectionElement || !labelElement) return;
 
-                const sectionElement = this.getExistingSection(settingsPanel);
-                const labelElement = this.getExistingSectionLabel(sectionElement);
+            const sectionClassName = sectionElement.className;
+            const titleClassName = labelElement.className;
 
-                if (!sectionElement || !labelElement) return;
+            const sectionContainer = document.createElement("div");
+            sectionContainer.className = sectionClassName;
+            sectionContainer.id = sectionId;
 
-                const sectionClassName = sectionElement.className;
-                const titleClassName = labelElement.className;
+            const sectionTitle = document.createElement("div");
+            sectionTitle.className = titleClassName;
+            sectionTitle.textContent = title;
 
-                sectionContainer = document.createElement("div");
-                sectionContainer.className = sectionClassName;
-                sectionContainer.id = sectionId;
-                sectionContainer.setAttribute("data-stremio-enhanced-section", sectionId);
+            sectionContainer.appendChild(sectionTitle);
+            settingsPanel.appendChild(sectionContainer);
 
-                const sectionTitle = document.createElement("div");
-                sectionTitle.className = titleClassName;
-                sectionTitle.textContent = title;
+            // Add section to nav
+            this.waitForNavMenu().then(() => {
+                const nav = this.getNavMenu();
+                // Try to find shortcuts nav to insert after, or just append
+                const shortcutsNav = this.getNavShortcutItem();
 
-                sectionContainer.appendChild(sectionTitle);
-                settingsPanel.appendChild(sectionContainer);
-            }
+                if (!nav) return;
+                if(document.querySelector(`[data-section="${sectionId}"]`)) return; // Nav item already exists
 
-            this.ensureNavItem(sectionId, title);
+                const enhancedNavContainer = document.createElement("div");
+                enhancedNavContainer.innerHTML = getEnhancedNav();
+
+                if (shortcutsNav) {
+                    nav.insertBefore(enhancedNavContainer, shortcutsNav.nextSibling);
+                } else {
+                    nav.appendChild(enhancedNavContainer);
+                }
+            }).catch(err => this.logger.error(`Failed to add nav: ${err}`));
         }).catch(err => this.logger.error(`Failed to add section: ${err}`));
     }
 
@@ -102,11 +65,6 @@ class Settings {
      */
     public static addCategory(title: string, sectionId: string, icon: string): void {
         this.waitForSettingsPanel().then(() => {
-            const section = document.getElementById(sectionId);
-            if (!(section instanceof HTMLElement)) return;
-
-            if (this.getExistingCategory(section, sectionId, title)) return;
-
             this.logger.info(`Adding category: ${title} to section: ${sectionId}`);
 
             const categoryTemplate = this.getCategoryTemplate();
@@ -114,15 +72,18 @@ class Settings {
 
             const { categoryClass, categoryTitleClass, headingClass, iconClass } = categoryTemplate;
 
+            // Replace icon class
             icon = icon.replace(`class="icon"`, `class="${iconClass}"`);
+
+            const section = document.getElementById(sectionId);
+            if (!section) return;
 
             const categoryDiv = document.createElement("div");
             categoryDiv.className = categoryClass;
-            categoryDiv.setAttribute("data-stremio-enhanced-category", this.getCategoryKey(sectionId, title));
             
             const titleDiv = document.createElement("div");
             titleDiv.className = categoryTitleClass;
-            titleDiv.textContent = title;
+            titleDiv.innerHTML = title;
 
             const headingDiv = document.createElement("div");
             // If we found a class, use it. If not, fallback to selector logic or empty
@@ -145,8 +106,6 @@ class Settings {
      */
     public static addButton(title: string, id: string, query: string): void {
         Helpers.waitForElm(query).then(() => {
-            if (document.getElementById(id)) return;
-
             const element = document.querySelector(query);
             if (!element) return;
 
@@ -174,10 +133,6 @@ class Settings {
      */
     public static addItem(type: "theme" | "plugin", fileName: string, metaData: MetaData): void {
         this.logger.info(`Adding ${type}: ${fileName}`);
-
-        if (document.getElementsByName(`${fileName}-box`).length > 0) {
-            return;
-        }
         
         if (type === "theme") {
             Helpers.waitForElm(SELECTORS.THEMES_CATEGORY).then(() => {
@@ -191,10 +146,6 @@ class Settings {
     }
 
     private static addPlugin(fileName: string, metaData: MetaData): void {
-        if (document.getElementsByName(`${fileName}-box`).length > 0) {
-            return;
-        }
-
         const enabledPlugins: string[] = JSON.parse(
             localStorage.getItem(STORAGE_KEYS.ENABLED_PLUGINS) || "[]"
         );
@@ -202,7 +153,6 @@ class Settings {
         const pluginContainer = document.createElement("div");
         pluginContainer.innerHTML = getPluginItemTemplate(fileName, metaData, enabledPlugins.includes(fileName));
         pluginContainer.setAttribute("name", `${fileName}-box`);
-        pluginContainer.setAttribute("data-stremio-enhanced-item", fileName);
 
         const pluginsCategory = document.querySelector(SELECTORS.PLUGINS_CATEGORY);
         pluginsCategory?.appendChild(pluginContainer);
@@ -211,16 +161,11 @@ class Settings {
     }
 
     private static addTheme(fileName: string, metaData: MetaData): void {
-        if (document.getElementsByName(`${fileName}-box`).length > 0) {
-            return;
-        }
-
         const currentTheme = localStorage.getItem(STORAGE_KEYS.CURRENT_THEME);
 
         const themeContainer = document.createElement("div");
         themeContainer.innerHTML = getThemeItemTemplate(fileName, metaData, currentTheme === fileName);
         themeContainer.setAttribute("name", `${fileName}-box`);
-        themeContainer.setAttribute("data-stremio-enhanced-item", fileName);
 
         const themesCategory = document.querySelector(SELECTORS.THEMES_CATEGORY);
         themesCategory?.appendChild(themeContainer);
@@ -232,9 +177,8 @@ class Settings {
      * Remove an item from the settings
      */
     public static removeItem(fileName: string): void {
-        Array.from(document.getElementsByName(`${fileName}-box`)).forEach((element) => {
-            element.remove();
-        });
+        const element = document.getElementsByName(`${fileName}-box`)[0];
+        element?.remove();
     }
 
     /**
@@ -275,7 +219,7 @@ class Settings {
                  let parent = link.parentElement;
                  while(parent) {
                      const found = keywords.filter(k => parent!.querySelector(`[title="${k}"]`));
-                     if (found.length >= 1) { // Changed to 1 to be more permissive on mobile
+                     if (found.length >= 2) {
                          return parent;
                      }
                      parent = parent.parentElement;
@@ -305,14 +249,14 @@ class Settings {
              if (navMenu && (div === navMenu || navMenu.contains(div))) continue;
 
              // The real settings panel contains large sections, so we can check if it has multiple children
-             if (div.children.length >= 2) { // Changed to >= 2 to be more permissive on mobile
+             if (div.children.length > 2) {
                  let matchCount = 0;
                  for (let i = 0; i < div.children.length; i++) {
                      if (keywords.some(k => div.children[i].textContent?.includes(k))) {
                          matchCount++;
                      }
                  }
-                 if (matchCount >= 1) return div; // Changed to >= 1 to be more permissive on mobile
+                 if (matchCount >= 2) return div;
              }
         }
         return null;
@@ -405,7 +349,7 @@ class Settings {
     private static waitForSettingsPanel(): Promise<void> {
         return new Promise((resolve) => {
             let retries = 0;
-            const maxRetries = 40; // 20 seconds
+            const maxRetries = 20; // 10 seconds
             const interval = setInterval(() => {
                 if (this.getSettingsPanel()) {
                     clearInterval(interval);
@@ -425,7 +369,7 @@ class Settings {
     private static waitForNavMenu(): Promise<void> {
          return new Promise((resolve) => {
             let retries = 0;
-            const maxRetries = 40; // 20 seconds
+            const maxRetries = 20;
             const interval = setInterval(() => {
                 if (this.getNavMenu()) {
                     clearInterval(interval);

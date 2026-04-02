@@ -9,7 +9,7 @@ const run = async () => {
             outfile: 'android/app/src/main/assets/preload.js',
             platform: 'browser',
             target: ['es2020'],
-            external: ['electron'],
+            external: ['electron', 'fs', 'fs/promises', 'os'],
             sourcemap: 'inline',
             alias: {
                 'path': require.resolve('path-browserify'),
