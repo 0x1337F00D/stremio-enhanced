@@ -1,7 +1,6 @@
 import { IPlatform, FileStat } from "./IPlatform";
 import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
 import { Browser } from "@capacitor/browser";
-import { FilePicker } from "@capawesome/capacitor-file-picker";
 
 interface AndroidBridge {
     openPath(path: string): void;
@@ -21,6 +20,7 @@ export class CapacitorPlatform implements IPlatform {
     private readonly enhancedPath = "Stremio Enhanced";
     private readonly themesPath = `${this.enhancedPath}/themes`;
     private readonly pluginsPath = `${this.enhancedPath}/plugins`;
+    private readonly logsPath = `${this.enhancedPath}/logs`;
 
     private isExternalPath(path: string): boolean {
         return path.startsWith("file://") || path.startsWith("content://") || path.startsWith("/");
@@ -66,7 +66,9 @@ export class CapacitorPlatform implements IPlatform {
         try {
             const result = await Filesystem.readdir({ path, directory });
             return result.files.map(file => file.name);
-        } catch {
+        } catch (error: any) {
+            if (error?.message?.includes("does not exist")) return [];
+            console.error("Failed to readdir:", error);
             return [];
         }
     }
@@ -106,8 +108,7 @@ export class CapacitorPlatform implements IPlatform {
 
     private async ensurePermissions(): Promise<void> {
         await Promise.allSettled([
-            Filesystem.requestPermissions(),
-            FilePicker.requestPermissions()
+            Filesystem.requestPermissions()
         ]);
     }
 
@@ -128,8 +129,14 @@ export class CapacitorPlatform implements IPlatform {
     }
 
     async readdir(path: string): Promise<string[]> {
-        const result = await Filesystem.readdir(this.getFileOptions(path));
-        return result.files.map(f => f.name);
+        try {
+            const result = await Filesystem.readdir(this.getFileOptions(path));
+            return result.files.map(f => f.name);
+        } catch (error: any) {
+            if (error?.message?.includes("does not exist")) return [];
+            console.error("Failed to readdir:", error);
+            return [];
+        }
     }
 
     async exists(path: string): Promise<boolean> {
@@ -146,13 +153,17 @@ export class CapacitorPlatform implements IPlatform {
     }
 
     async mkdir(path: string): Promise<void> {
+        if (await this.exists(path)) return;
+
         try {
             await Filesystem.mkdir({
                 ...this.getFileOptions(path),
                 recursive: true
             });
-        } catch {
+        } catch (error: any) {
             // Ignore error if directory already exists
+            if (error?.message?.includes("already exists") || await this.exists(path)) return;
+            console.error("Failed to create directory:", error);
         }
     }
 
@@ -209,14 +220,14 @@ export class CapacitorPlatform implements IPlatform {
         await this.mkdir(this.getEnhancedPath());
         await this.mkdir(this.getThemesPath());
         await this.mkdir(this.getPluginsPath());
+        await this.mkdir(this.logsPath);
 
         await this.migrateLegacyDirectory("themes", this.getThemesPath());
         await this.migrateLegacyDirectory("plugins", this.getPluginsPath());
 
         const legacyRootExists = await this.existsInDirectory("logs", Directory.Data);
         if (legacyRootExists) {
-            await this.mkdir(`${this.getEnhancedPath()}/logs`);
-            await this.migrateLegacyDirectory("logs", `${this.getEnhancedPath()}/logs`);
+            await this.migrateLegacyDirectory("logs", this.logsPath);
         }
     }
 }
