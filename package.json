@@ -1,109 +1,112 @@
 {
-	"name": "stremio-enhanced",
-	"version": "1.0.2",
-	"description": "Electron-based Stremio client with plugins and themes support.",
-	"main": "./dist/main.js",
-	"scripts": {
-		"dist": "tsc && node ./copyComponents.js",
-		"watch": "tsc -w",
-		"lint": "cross-env ESLINT_USE_FLAT_CONFIG=false eslint -c .eslintrc.json --ext .ts ./src",
-		"dev": "node -e \"console.clear()\" && npm run dist && npx electron --log-level=3 ./dist/main.js --devtools",
-		"build:android:nodejs": "node scripts/download-server.js",
-		"build:android:preload": "node scripts/build-android-preload.js",
-		"build": "npm run dist && electron-builder",
-		"build:linux:x64": "npm run dist && electron-builder --linux --x64",
-		"build:linux:arm64": "npm run dist && electron-builder --linux --arm64",
-		"build:mac:x64": "npm run dist && electron-builder --mac --x64",
-		"build:mac:arm64": "npm run dist && electron-builder --mac --arm64",
-		"build:win:x64": "npm run dist && electron-builder --win --x64",
-		"build:win:arm64": "npm run dist && electron-builder --win --arm64",
-		"build:win": "npm run dist && electron-builder --win",
-		"test": "vitest run"
-	},
-	"repository": "https://github.com/REVENGE977/stremio-enhanced.git",
-	"publish": {
-		"provider": "github",
-		"releaseType": "release"
-	},
-	"author": "REVENGE",
-	"license": "MIT",
-	"devDependencies": {
-		"@capacitor/android": "^8.0.1",
-		"@capacitor/cli": "^8.0.1",
-		"@types/node": "^25.5.0",
-		"@types/unzipper": "^0.10.11",
-		"@typescript-eslint/eslint-plugin": "^8.54.0",
-		"@typescript-eslint/parser": "^8.54.0",
-		"cross-env": "^10.1.0",
-		"electron": "^39.2.7",
-		"electron-builder": "^26.4.0",
-		"esbuild": "^0.27.2",
-		"path-browserify": "^1.0.1",
-		"typescript": "^5.7.2",
-		"vitest": "^4.1.1"
-	},
-	"dependencies": {
-		"@capacitor/browser": "^8.0.0",
-		"@capacitor/core": "^8.0.1",
-		"@capacitor/filesystem": "^8.1.0",
-		"@capawesome/capacitor-file-picker": "^8.0.2",
-		"@xhayper/discord-rpc": "^1.2.1",
-		"capacitor-nodejs": "https://github.com/hampoelz/capacitor-nodejs/releases/download/v1.0.0-beta.9/capacitor-nodejs.tgz",
-		"discord-api-types": "^0.37.119",
-		"marked": "^15.0.7",
-		"p-limit": "^7.2.0",
-		"unzipper": "^0.12.3",
-		"winston": "^3.11.0"
-	},
-	"optionalDependencies": {
-		"dmg-license": "^1.0.11"
-	},
-	"files": [
-		"static/**/*",
-		"!**/node_modules/*",
-		"!**/dist/*",
-		"!**/src/*",
-		"index.html"
-	],
-	"browser": {
-		"./src/utils/logger.ts": "./src/utils/logger.browser.ts",
-		"./src/components/apply-theme/applyTheme.ts": "./src/components/apply-theme/applyTheme.browser.ts",
-		"./src/utils/templateCache.ts": "./src/utils/templateCache.browser.ts"
-	},
-	"build": {
-		"appId": "com.revenge977.stremio-enhanced",
-		"productName": "Stremio Enhanced",
-		"asar": true,
-		"icon": "images/icon",
-		"directories": {
-			"output": "release-builds"
-		},
-		"publish": {
-			"provider": "github",
-			"owner": "REVENGE977",
-			"repo": "stremio-enhanced"
-		},
-		"asarUnpack": [
-			"**/register-scheme/build/Release/*.node",
-			"**/register-scheme/node-addon-api/src/node-api.target.mk"
-		],
-		"win": {
-			"target": [
-				{
-					"target": "nsis"
-				},
-				{
-					"target": "portable"
-				}
-			]
-		},
-		"mac": {
-			"target": "dmg",
-			"icon": "images/icon.icns"
-		},
-		"linux": {
-			"target": "AppImage",
-			"icon": "images/icon.png"
-		}
-	}
+  "name": "stremio-enhanced",
+  "version": "1.0.2",
+  "description": "Electron-based Stremio client with plugins and themes support.",
+  "main": "./dist/main.js",
+  "scripts": {
+    "dist": "tsc && node ./copyComponents.js",
+    "watch": "tsc -w",
+    "lint": "cross-env ESLINT_USE_FLAT_CONFIG=false eslint -c .eslintrc.json --ext .ts ./src",
+    "dev": "node -e \"console.clear()\" && npm run dist && npx electron --log-level=3 ./dist/main.js --devtools",
+    "build:android:nodejs": "node scripts/download-server.js",
+    "build:android:preload": "node scripts/build-android-preload.js",
+    "build": "npm run dist && electron-builder",
+    "build:linux:x64": "npm run dist && electron-builder --linux --x64",
+    "build:linux:arm64": "npm run dist && electron-builder --linux --arm64",
+    "build:mac:x64": "npm run dist && electron-builder --mac --x64",
+    "build:mac:arm64": "npm run dist && electron-builder --mac --arm64",
+    "build:win:x64": "npm run dist && electron-builder --win --x64",
+    "build:win:arm64": "npm run dist && electron-builder --win --arm64",
+    "build:win": "npm run dist && electron-builder --win",
+    "test": "jest"
+  },
+  "repository": "https://github.com/REVENGE977/stremio-enhanced.git",
+  "publish": {
+    "provider": "github",
+    "releaseType": "release"
+  },
+  "author": "REVENGE",
+  "license": "MIT",
+  "devDependencies": {
+    "@capacitor/android": "^8.0.1",
+    "@capacitor/cli": "^8.0.1",
+    "@types/jest": "^30.0.0",
+    "@types/unzipper": "^0.10.11",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
+    "@typescript-eslint/parser": "^8.54.0",
+    "cross-env": "^10.1.0",
+    "electron": "^39.2.7",
+    "electron-builder": "^26.4.0",
+    "esbuild": "^0.27.2",
+    "jest": "^30.3.0",
+    "jest-environment-jsdom": "^30.3.0",
+    "jsdom": "^29.0.1",
+    "path-browserify": "^1.0.1",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@capacitor/browser": "^8.0.0",
+    "@capacitor/core": "^8.0.1",
+    "@capacitor/filesystem": "^8.1.0",
+    "@capawesome/capacitor-file-picker": "^8.0.2",
+    "@xhayper/discord-rpc": "^1.2.1",
+    "capacitor-nodejs": "https://github.com/hampoelz/capacitor-nodejs/releases/download/v1.0.0-beta.9/capacitor-nodejs.tgz",
+    "discord-api-types": "^0.37.119",
+    "marked": "^15.0.7",
+    "p-limit": "^7.2.0",
+    "unzipper": "^0.12.3",
+    "winston": "^3.11.0"
+  },
+  "optionalDependencies": {
+    "dmg-license": "^1.0.11"
+  },
+  "files": [
+    "static/**/*",
+    "!**/node_modules/*",
+    "!**/dist/*",
+    "!**/src/*",
+    "index.html"
+  ],
+  "browser": {
+    "./src/utils/logger.ts": "./src/utils/logger.browser.ts",
+    "./src/components/apply-theme/applyTheme.ts": "./src/components/apply-theme/applyTheme.browser.ts",
+    "./src/utils/templateCache.ts": "./src/utils/templateCache.browser.ts"
+  },
+  "build": {
+    "appId": "com.revenge977.stremio-enhanced",
+    "productName": "Stremio Enhanced",
+    "asar": true,
+    "icon": "images/icon",
+    "directories": {
+      "output": "release-builds"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "REVENGE977",
+      "repo": "stremio-enhanced"
+    },
+    "asarUnpack": [
+      "**/register-scheme/build/Release/*.node",
+      "**/register-scheme/node-addon-api/src/node-api.target.mk"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis"
+        },
+        {
+          "target": "portable"
+        }
+      ]
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "images/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "images/icon.png"
+    }
+  }
 }
