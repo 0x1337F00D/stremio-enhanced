@@ -60,6 +60,35 @@ class Settings {
     }
 
     /**
+     * Get a value from settings
+     */
+    public static get(key: string, defaultValue: any = null): any {
+        const value = localStorage.getItem(key);
+        if (value === null) return defaultValue;
+
+        try {
+            return JSON.parse(value);
+        } catch {
+            return value;
+        }
+    }
+
+    /**
+     * Set a value in settings
+     */
+    public static set(key: string, value: any): void {
+        const valueToStore = typeof value === 'string' ? value : JSON.stringify(value);
+        localStorage.setItem(key, valueToStore);
+    }
+
+    /**
+     * Remove a value from settings
+     */
+    public static remove(key: string): void {
+        localStorage.removeItem(key);
+    }
+
+    /**
      * Add a new section to the settings panel
      */
     public static addSection(sectionId: string, title: string): void {
@@ -191,13 +220,7 @@ class Settings {
     }
 
     private static addPlugin(fileName: string, metaData: MetaData): void {
-        if (document.getElementsByName(`${fileName}-box`).length > 0) {
-            return;
-        }
-
-        const enabledPlugins: string[] = JSON.parse(
-            localStorage.getItem(STORAGE_KEYS.ENABLED_PLUGINS) || "[]"
-        );
+        const enabledPlugins: string[] = this.get(STORAGE_KEYS.ENABLED_PLUGINS, []);
 
         const pluginContainer = document.createElement("div");
         pluginContainer.innerHTML = getPluginItemTemplate(fileName, metaData, enabledPlugins.includes(fileName));
@@ -211,11 +234,7 @@ class Settings {
     }
 
     private static addTheme(fileName: string, metaData: MetaData): void {
-        if (document.getElementsByName(`${fileName}-box`).length > 0) {
-            return;
-        }
-
-        const currentTheme = localStorage.getItem(STORAGE_KEYS.CURRENT_THEME);
+        const currentTheme = this.get(STORAGE_KEYS.CURRENT_THEME);
 
         const themeContainer = document.createElement("div");
         themeContainer.innerHTML = getThemeItemTemplate(fileName, metaData, currentTheme === fileName);
