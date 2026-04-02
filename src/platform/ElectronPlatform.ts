@@ -1,68 +1,52 @@
 import { IPlatform, FileStat } from "./IPlatform";
-import { readFile, writeFile, readdir, unlink, mkdir, stat } from "fs/promises";
-import { existsSync } from "fs"; // exists is deprecated in fs/promises
-import { shell } from "electron";
-import { join } from "path";
-import { homedir } from "os";
+import { ipcRenderer } from "electron";
+import { IPC_CHANNELS } from "../constants";
 
 export class ElectronPlatform implements IPlatform {
     id: "electron" = "electron";
 
-    private baseDataPath: string;
-    private enhancedPath: string;
-    private themesPath: string;
-    private pluginsPath: string;
+    private enhancedPath: string = "";
+    private themesPath: string = "";
+    private pluginsPath: string = "";
 
     constructor() {
-        this.baseDataPath = process.platform === "win32"
-            ? process.env.APPDATA || join(homedir(), "AppData", "Roaming")
-            : process.platform === "darwin"
-                ? join(homedir(), "Library", "Application Support")
-                : join(homedir(), ".config");
-
-        this.enhancedPath = join(this.baseDataPath, "stremio-enhanced");
-        this.themesPath = join(this.enhancedPath, "themes");
-        this.pluginsPath = join(this.enhancedPath, "plugins");
+        // Will be initialized in init() via IPC
     }
 
     async readFile(path: string): Promise<string> {
-        return readFile(path, "utf-8");
+        return ipcRenderer.invoke(IPC_CHANNELS.READ_FILE, path);
     }
 
     async writeFile(path: string, content: string): Promise<void> {
-        return writeFile(path, content, "utf-8");
+        return ipcRenderer.invoke(IPC_CHANNELS.WRITE_FILE, path, content);
     }
 
     async readdir(path: string): Promise<string[]> {
-        return readdir(path);
+        return ipcRenderer.invoke(IPC_CHANNELS.READ_DIR, path);
     }
 
     async exists(path: string): Promise<boolean> {
-        return existsSync(path);
+        return ipcRenderer.invoke(IPC_CHANNELS.EXISTS, path);
     }
 
     async unlink(path: string): Promise<void> {
-        return unlink(path);
+        return ipcRenderer.invoke(IPC_CHANNELS.UNLINK, path);
     }
 
     async mkdir(path: string): Promise<void> {
-        return mkdir(path, { recursive: true }).then(() => {});
+        return ipcRenderer.invoke(IPC_CHANNELS.MKDIR, path);
     }
 
     async stat(path: string): Promise<FileStat> {
-        const stats = await stat(path);
-        return {
-            isFile: stats.isFile(),
-            isDirectory: stats.isDirectory()
-        };
+        return ipcRenderer.invoke(IPC_CHANNELS.STAT, path);
     }
 
     async openPath(path: string): Promise<void> {
-        await shell.openPath(path);
+        return ipcRenderer.invoke(IPC_CHANNELS.OPEN_PATH, path);
     }
 
     async openExternal(url: string): Promise<void> {
-        await shell.openExternal(url);
+        return ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url);
     }
 
     isPictureInPictureSupported(): boolean {
@@ -90,6 +74,11 @@ export class ElectronPlatform implements IPlatform {
     }
 
     async init(): Promise<void> {
+        const paths = await ipcRenderer.invoke(IPC_CHANNELS.GET_PATHS);
+        this.enhancedPath = paths.enhancedPath;
+        this.themesPath = paths.themesPath;
+        this.pluginsPath = paths.pluginsPath;
+
         // Ensure directories exist
         if (!await this.exists(this.enhancedPath)) {
             await this.mkdir(this.enhancedPath);
