@@ -27,13 +27,13 @@ class EmbeddedSubtitles {
 		const targetDir = resolve(streamingServerDir, "subtitles");
 		if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true });
 		
-		const ffprobe = spawn(join(streamingServerDir, "ffprobe"), [
+		const ffprobe = spawn(`${streamingServerDir}\\ffprobe`, [
 			"-v", "error",
 			"-select_streams", "s",
 			"-show_entries", "stream=index,codec_name:stream_tags=language,title",
 			"-of", "json",
-			streamURL
-		], { stdio: "pipe" });
+			`"${streamURL}"`
+		], { stdio: "pipe", shell: true });
 
 
 		let probeOutput = "";
@@ -70,7 +70,7 @@ class EmbeddedSubtitles {
 					outFile
 				];
 
-				const ffmpeg = spawn(join(streamingServerDir, "ffmpeg"), args, { stdio: "ignore" });
+				const ffmpeg = spawn(`${streamingServerDir}\\ffmpeg`, args, { stdio: "ignore" });
 
 				ffmpeg.on("error", reject);
 				ffmpeg.on("close", code => {

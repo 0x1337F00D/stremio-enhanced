@@ -1,6 +1,6 @@
 import { ipcRenderer } from "electron";
 import { PlatformManager } from "./platform/PlatformManager";
-import { ElectronPlatform } from "./platform/ElectronPlatform";
+
 import Settings from "./core/Settings";
 import properties from "./core/Properties";
 import ModManager from "./core/ModManager";
@@ -29,7 +29,7 @@ import ExtractedSubtitle from "./interfaces/ExtractedSubtitle";
 import PlaybackState from "./utils/PlaybackState";
 
 // Initialize platform for Electron
-PlatformManager.setPlatform(new ElectronPlatform());
+PlatformManager.init();
 
 // Cache transparency status to avoid repeated IPC calls
 let transparencyStatusCache: boolean | null = null;
@@ -43,7 +43,7 @@ async function getTransparencyStatus(): Promise<boolean> {
 
 window.addEventListener("load", async () => {
     // Initialize platform if not already (redundant but safe)
-    if (!PlatformManager.current) PlatformManager.setPlatform(new ElectronPlatform());
+    if (!PlatformManager.current) PlatformManager.init();
     await PlatformManager.current.init();
 
     initializeUserSettings();
@@ -99,22 +99,10 @@ window.addEventListener("load", async () => {
 });
 
 // Settings page opened
-let isCheckingSettings = false;
 async function checkSettings() {
     if (!location.href.includes("#/settings")) return;
     if (document.querySelector(`a[href="#settings-enhanced"]`)) return;
 
-    if (isCheckingSettings) return;
-    isCheckingSettings = true;
-
-    try {
-        await doCheckSettings();
-    } finally {
-        isCheckingSettings = false;
-    }
-}
-
-async function doCheckSettings() {
     ModManager.addApplyThemeFunction();
     
     const themesPath = properties.themesPath;
