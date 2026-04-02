@@ -132,10 +132,50 @@ if (document.readyState === 'loading') {
 }
 
 // Settings page opened
+let isCheckingSettings = false;
+
+function isEnhancedSettingsReady(): boolean {
+    return Boolean(
+        document.getElementById("enhanced") &&
+        document.querySelector('[data-section="enhanced"]') &&
+        document.querySelector(SELECTORS.THEMES_CATEGORY) &&
+        document.querySelector(SELECTORS.PLUGINS_CATEGORY) &&
+        document.querySelector(SELECTORS.ABOUT_CATEGORY)
+    );
+}
+
+function bindButtonClick(
+    buttonId: string,
+    handler: () => void | Promise<void>,
+    errorContext: string
+): void {
+    Helpers.waitForElm(`#${buttonId}`).then(() => {
+        const button = document.getElementById(buttonId);
+        if (!(button instanceof HTMLElement)) return;
+        if (button.dataset.stremioEnhancedClickBound === "true") return;
+
+        button.dataset.stremioEnhancedClickBound = "true";
+        button.addEventListener("click", () => {
+            void handler();
+        });
+    }).catch(err => logger.error(`Failed to setup ${errorContext}: ${err}`));
+}
+
 async function checkSettings() {
     if (!location.href.includes(SETTINGS_ROUTE)) return;
-    if (document.getElementById("enhanced") || document.querySelector('[data-section="enhanced"]')) return;
+    if (isEnhancedSettingsReady()) return;
 
+    if (isCheckingSettings) return;
+    isCheckingSettings = true;
+
+    try {
+        await doCheckSettings();
+    } finally {
+        isCheckingSettings = false;
+    }
+}
+
+async function doCheckSettings() {
     ModManager.addApplyThemeFunction();
 
     const themesPath = properties.themesPath;
@@ -178,13 +218,16 @@ async function checkSettings() {
     // Add themes to settings
     Helpers.waitForElm(SELECTORS.THEMES_CATEGORY).then(async () => {
         // Default theme
-        const isCurrentThemeDefault = localStorage.getItem(STORAGE_KEYS.CURRENT_THEME) === "Default";
-        const defaultThemeContainer = document.createElement("div");
-        defaultThemeContainer.innerHTML = getDefaultThemeTemplate(isCurrentThemeDefault);
-        document.querySelector(SELECTORS.THEMES_CATEGORY)?.appendChild(defaultThemeContainer);
+        if (!document.getElementById("stremio-enhanced-default-theme")) {
+            const isCurrentThemeDefault = localStorage.getItem(STORAGE_KEYS.CURRENT_THEME) === "Default";
+            const defaultThemeContainer = document.createElement("div");
+            defaultThemeContainer.id = "stremio-enhanced-default-theme";
+            defaultThemeContainer.innerHTML = getDefaultThemeTemplate(isCurrentThemeDefault);
+            document.querySelector(SELECTORS.THEMES_CATEGORY)?.appendChild(defaultThemeContainer);
+        }
 
         // Add installed themes
-        for (const theme of themesList) {
+        await Promise.all(themesList.map(async (theme) => {
             try {
                 const themePath = join(themesPath, theme);
                 const content = await PlatformManager.current.readFile(themePath);
@@ -205,7 +248,7 @@ async function checkSettings() {
             } catch (e) {
                 logger.error(`Failed to load theme metadata for ${theme}: ${e}`);
             }
-        }
+        }));
     }).catch(err => logger.error("Failed to setup themes: " + err));
 
     // Add plugins to settings
@@ -308,7 +351,7 @@ function observeSettingsUi(): void {
 
     const startObserver = () => {
         const observer = new MutationObserver(() => {
-            if (location.href.includes(SETTINGS_ROUTE) && !document.getElementById("enhanced")) {
+            if (location.href.includes(SETTINGS_ROUTE) && !isCheckingSettings && !isEnhancedSettingsReady()) {
                 scheduleSettingsCheck();
             }
         });
@@ -524,28 +567,24 @@ async function loadEnabledPlugins(): Promise<void> {
 }
 
 function setupImportButton(buttonId: string, type: "theme" | "plugin"): void {
-    Helpers.waitForElm(`#${buttonId}`).then(() => {
-        document.getElementById(buttonId)?.addEventListener("click", async () => {
-            await importModFile(type);
-        });
-    }).catch(err => logger.error(`Failed to setup ${type} import button: ${err}`));
+    bindButtonClick(buttonId, () => importModFile(type), `${type} import button`);
 }
 
 function setupManagedFolderButton(buttonId: string, folderPath: string): void {
-    Helpers.waitForElm(`#${buttonId}`).then(() => {
-        document.getElementById(buttonId)?.addEventListener("click", async () => {
-            await PlatformManager.current.openPath(folderPath);
-        });
-    }).catch(err => logger.error(`Failed to setup folder button ${buttonId}: ${err}`));
+    bindButtonClick(buttonId, () => PlatformManager.current.openPath(folderPath), `folder button ${buttonId}`);
 }
 
+let isImporting = false;
 async function importModFile(type: "theme" | "plugin"): Promise<void> {
+    if (isImporting) return;
+    isImporting = true;
     try {
-        await FilePicker.requestPermissions();
-
         const result = await FilePicker.pickFiles({ limit: 1 });
         const file = result.files[0];
-        if (!file?.name || !file.path) {
+        const filePath = (file as { path?: string; uri?: string } | undefined)?.path
+            ?? (file as { path?: string; uri?: string } | undefined)?.uri;
+
+        if (!file?.name || !filePath) {
             return;
         }
 
@@ -560,12 +599,22 @@ async function importModFile(type: "theme" | "plugin"): Promise<void> {
             return;
         }
 
-        const content = await PlatformManager.current.readFile(file.path);
+        const content = await PlatformManager.current.readFile(filePath);
         const destinationDirectory = type === "theme" ? properties.themesPath : properties.pluginsPath;
         await PlatformManager.current.writeFile(join(destinationDirectory, file.name), content);
-        location.reload();
+
+        // Use a timeout to avoid location.reload() triggering loop issues with Capacitor Activity Results
+        setTimeout(() => location.reload(), 100);
     } catch (err) {
-        logger.error(`Failed to import ${type}: ${err}`);
+        const message = err instanceof Error ? err.message : String(err);
+        if (/cancel|canceled|cancelled|no files selected/i.test(message)) {
+            return;
+        }
+
+        logger.error(`Failed to import ${type}: ${message}`);
+    } finally {
+        // slight delay before unlocking to avoid double click events after focus returns
+        setTimeout(() => { isImporting = false; }, 500);
     }
 }
 
@@ -775,58 +824,49 @@ function setupSearchBar(): void {
 }
 
 function setupBrowseModsButton(): void {
-    Helpers.waitForElm('#browsePluginsThemesBtn').then(() => {
-        const btn = document.getElementById("browsePluginsThemesBtn");
-        btn?.addEventListener("click", browseMods);
-    }).catch(() => {});
+    bindButtonClick("browsePluginsThemesBtn", browseMods, "browse mods button");
 }
 
 function writeAbout(): void {
     Helpers.waitForElm(SELECTORS.ABOUT_CATEGORY).then(async () => {
         const aboutCategory = document.querySelector(SELECTORS.ABOUT_CATEGORY);
-        if (aboutCategory) {
-            // Hardcoded values for Android
-            aboutCategory.innerHTML += getAboutCategoryTemplate(
-                "Android-v1.0.0",
-                false,
-                false,
-                false
-            );
+        if (aboutCategory instanceof HTMLElement) {
+            if (!document.getElementById("stremio-enhanced-about-content")) {
+                const aboutContent = document.createElement("div");
+                aboutContent.id = "stremio-enhanced-about-content";
+                aboutContent.innerHTML = getAboutCategoryTemplate(
+                    "Android-v1.0.0",
+                    false,
+                    false,
+                    false
+                );
+                aboutCategory.appendChild(aboutContent);
+            }
 
-            // Add Open Logs button
             Settings.addButton("Open Logs", "openLogsBtn", SELECTORS.ABOUT_CATEGORY);
             Settings.addButton("Export Logs", "exportLogsBtn", SELECTORS.ABOUT_CATEGORY);
             Settings.addButton("Reload Streaming Server", "reloadStreamingServerBtn", SELECTORS.ABOUT_CATEGORY);
             Settings.addButton("Open App Files", "openEnhancedFolderBtn", SELECTORS.ABOUT_CATEGORY);
 
-            // Attach listener
-            Helpers.waitForElm("#openLogsBtn").then(() => {
-                document.getElementById("openLogsBtn")?.addEventListener("click", () => {
-                    LogManager.showLogs();
-                });
-            });
+            bindButtonClick("openLogsBtn", () => {
+                LogManager.showLogs();
+            }, "open logs button");
 
-            Helpers.waitForElm("#exportLogsBtn").then(() => {
-                document.getElementById("exportLogsBtn")?.addEventListener("click", async () => {
-                    const exportedPath = await LogManager.exportLogs();
-                    if (exportedPath) {
-                        await PlatformManager.current.openPath(join(properties.enhancedPath, "logs"));
-                    }
-                });
-            });
+            bindButtonClick("exportLogsBtn", async () => {
+                const exportedPath = await LogManager.exportLogs();
+                if (exportedPath) {
+                    await PlatformManager.current.openPath(join(properties.enhancedPath, "logs"));
+                }
+            }, "export logs button");
 
-            Helpers.waitForElm("#reloadStreamingServerBtn").then(() => {
-                document.getElementById("reloadStreamingServerBtn")?.addEventListener("click", async () => {
-                    await ensureBundledStreamingServerReady();
-                    scheduleStreamingServerReload();
-                });
-            });
+            bindButtonClick("reloadStreamingServerBtn", async () => {
+                await ensureBundledStreamingServerReady();
+                scheduleStreamingServerReload();
+            }, "reload streaming server button");
 
-            Helpers.waitForElm("#openEnhancedFolderBtn").then(() => {
-                document.getElementById("openEnhancedFolderBtn")?.addEventListener("click", async () => {
-                    await PlatformManager.current.openPath(properties.enhancedPath);
-                });
-            });
+            bindButtonClick("openEnhancedFolderBtn", async () => {
+                await PlatformManager.current.openPath(properties.enhancedPath);
+            }, "open enhanced folder button");
         }
     }).catch(err => logger.error("Failed to write about section: " + err));
 }

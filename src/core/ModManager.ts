@@ -12,6 +12,7 @@ import ExtractMetaData from "../utils/ExtractMetaData";
 
 class ModManager {
     private static logger = getLogger("ModManager");
+    private static readonly APPLY_THEME_SCRIPT_ID = "stremio-enhanced-apply-theme-script";
     
     /**
      * Load and enable a plugin by filename
@@ -172,6 +173,11 @@ class ModManager {
             const pluginCheckboxes = document.getElementsByClassName("plugin") as HTMLCollectionOf<HTMLElement>;
             
             for (let i = 0; i < pluginCheckboxes.length; i++) {
+                if (pluginCheckboxes[i].dataset.stremioEnhancedToggleBound === "true") {
+                    continue;
+                }
+
+                pluginCheckboxes[i].dataset.stremioEnhancedToggleBound = "true";
                 pluginCheckboxes[i].addEventListener("click", async () => {
                     pluginCheckboxes[i].classList.toggle(CLASSES.CHECKED);
                     const pluginName = pluginCheckboxes[i].getAttribute('name');
@@ -247,9 +253,12 @@ class ModManager {
     public static scrollListener(): void {
         helpers.waitForElm('[data-section="enhanced"]').then(() => {
             const enhanced = document.getElementById('enhanced');
-            const enhancedNav = document.querySelector('[data-section="enhanced"]');
+            const enhancedNav = document.querySelector('[data-section="enhanced"]') as HTMLElement | null;
 
-            if (!enhanced || !enhancedNav) return;
+            if (!(enhanced instanceof HTMLElement) || !enhancedNav) return;
+
+            if (enhancedNav.dataset.stremioEnhancedScrollBound === "true") return;
+            enhancedNav.dataset.stremioEnhancedScrollBound = "true";
 
             enhancedNav.addEventListener("click", () => {
                 const firstChild = document.querySelector("#enhanced > div");
@@ -279,9 +288,12 @@ class ModManager {
      * Add the applyTheme function to the page
      */
     public static addApplyThemeFunction(): void {
+        if (document.getElementById(this.APPLY_THEME_SCRIPT_ID)) return;
+
         const applyThemeScript = getApplyThemeTemplate();
         const script = document.createElement("script");  
         script.innerHTML = applyThemeScript;
+        script.id = this.APPLY_THEME_SCRIPT_ID;
         
         document.body.appendChild(script);
     }
