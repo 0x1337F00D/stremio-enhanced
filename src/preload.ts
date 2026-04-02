@@ -104,10 +104,22 @@ window.addEventListener("load", async () => {
 });
 
 // Settings page opened
+let isCheckingSettings = false;
 async function checkSettings() {
     if (!location.href.includes("#/settings")) return;
     if (document.querySelector(`a[href="#settings-enhanced"]`)) return;
-    
+
+    if (isCheckingSettings) return;
+    isCheckingSettings = true;
+
+    try {
+        await doCheckSettings();
+    } finally {
+        isCheckingSettings = false;
+    }
+}
+
+async function doCheckSettings() {
     ModManager.addApplyThemeFunction();
     
     const themesPath = properties.themesPath;

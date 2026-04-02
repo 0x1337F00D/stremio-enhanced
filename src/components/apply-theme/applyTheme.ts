@@ -1,5 +1,7 @@
 import Properties from '../../core/Properties';
 
+let cachedTemplate: string | null = null;
+
 export function getApplyThemeTemplate(): string {
     // Note: This loads a .js file, not HTML, so we don't use template cache
     const template = `function applyTheme(theme) {
@@ -69,5 +71,5 @@ export function getApplyThemeTemplate(): string {
         }
     }
 
-    return template.replace("{{ themesPath }}", themeBaseURL);
+    return cachedTemplate.replace("{{ themesPath }}", themeBaseURL);
 }
