@@ -18,7 +18,7 @@
 		"build:win:x64": "npm run dist && electron-builder --win --x64",
 		"build:win:arm64": "npm run dist && electron-builder --win --arm64",
 		"build:win": "npm run dist && electron-builder --win",
-		"test": "vitest run"
+		"test": "jest"
 	},
 	"repository": "https://github.com/REVENGE977/stremio-enhanced.git",
 	"publish": {
@@ -30,7 +30,7 @@
 	"devDependencies": {
 		"@capacitor/android": "^8.0.1",
 		"@capacitor/cli": "^8.0.1",
-		"@types/node": "^25.5.0",
+		"@types/jest": "^30.0.0",
 		"@types/unzipper": "^0.10.11",
 		"@typescript-eslint/eslint-plugin": "^8.54.0",
 		"@typescript-eslint/parser": "^8.54.0",
@@ -38,9 +38,10 @@
 		"electron": "^39.2.7",
 		"electron-builder": "^26.4.0",
 		"esbuild": "^0.27.2",
+		"jest": "^30.3.0",
 		"path-browserify": "^1.0.1",
-		"typescript": "^5.7.2",
-		"vitest": "^4.1.1"
+		"ts-jest": "^29.4.6",
+		"typescript": "^5.7.2"
 	},
 	"dependencies": {
 		"@capacitor/browser": "^8.0.0",
