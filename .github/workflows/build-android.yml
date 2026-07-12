@@ -30,6 +30,9 @@ jobs:
     - name: Build desktop sources
       run: npm run dist
 
+    - name: Type-check Android sources
+      run: npm run typecheck:android
+
     - name: Build Android Preload Script
       run: node scripts/build-android-preload.js
 

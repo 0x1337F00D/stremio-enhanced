@@ -1,6 +1,7 @@
 import TemplateCache from '../../utils/templateCache';
+import escapeHtml from '../../utils/escapeHtml';
 
-interface ModMetaData {
+export interface ModMetaData {
     name: string;
     description: string;
     author: string;
@@ -10,28 +11,46 @@ interface ModMetaData {
     repo: string;
 }
 
+function normalizeHttpsUrl(rawUrl: string | undefined): string | null {
+    if (!rawUrl) return null;
+
+    try {
+        const url = new URL(rawUrl);
+        if (url.protocol !== "https:") return null;
+        return url.toString();
+    } catch {
+        return null;
+    }
+}
+
+function getPlaceholderLogo(): string {
+    return `
+        <svg class="icon-GxVbY" viewBox="0 0 24 24" aria-label="Theme preview unavailable">
+            <path d="M4 3h16a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm2 9h6a1 1 0 0 1 1 1v3h1v6h-4v-6h1v-2H5a1 1 0 0 1-1-1v-2h2v1zm11.732 1.732l1.768-1.768 1.768 1.768a2.5 2.5 0 1 1-3.536 0z" style="fill: currentcolor;"></path>
+        </svg>`;
+}
+
 export function getModItemTemplate(
     metaData: ModMetaData,
     type: "Plugin" | "Theme", 
     installed: boolean
 ): string {
     let template = TemplateCache.load(__dirname, 'mods-item');
+    const previewUrl = normalizeHttpsUrl(metaData.preview);
+    const downloadUrl = normalizeHttpsUrl(metaData.download);
+    const repoUrl = normalizeHttpsUrl(metaData.repo);
     
     // Generate logo block based on type
     let logoBlock = "";
 
     if(type === "Theme") {
-        if(!metaData.preview) {
-            // If no preview is provided for theme, use a placeholder
-            logoBlock = `
-        <svg class="icon-GxVbY" viewBox="0 0 24 24">
-            <path d="M4 3h16a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm2 9h6a1 1 0 0 1 1 1v3h1v6h-4v-6h1v-2H5a1 1 0 0 1-1-1v-2h2v1zm11.732 1.732l1.768-1.768 1.768 1.768a2.5 2.5 0 1 1-3.536 0z" style="fill: currentcolor;"></path>
-        </svg>`;
+        if(!previewUrl) {
+            logoBlock = getPlaceholderLogo();
         } else {
-            // Use the preview image for theme logo
+            const safePreviewUrl = escapeHtml(previewUrl);
             logoBlock = `
-            <a href="${metaData.preview}" target="_blank" rel="noreferrer">
-                <img class="logo-WrsGF" src="${metaData.preview}" alt="Theme Preview" loading="lazy">
+            <a href="${safePreviewUrl}" target="_blank" rel="noreferrer">
+                <img class="logo-WrsGF" src="${safePreviewUrl}" alt="Theme Preview" loading="lazy">
             </a>`;
         }
     } else {
@@ -45,15 +64,23 @@ export function getModItemTemplate(
     const metaKeys = ['name', 'description', 'author', 'version'] as const;
     metaKeys.forEach(key => {
         const regex = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
-        template = template.replace(regex, metaData[key] || '');
+        template = template.replace(regex, escapeHtml(metaData[key] || ''));
     });
+
+    const action = downloadUrl ? (installed ? "uninstall" : "install") : "unavailable";
+    const actionTitle = downloadUrl ? (installed ? "Uninstall" : "Install") : "Unavailable";
 
     return template
         .replace(/\{\{\s*type\s*\}\}/g, type)
-        .replace(/\{\{\s*actionbtnTitle\s*\}\}/g, installed ? "Uninstall" : "Install")
+        .replace(/\{\{\s*actionbtnTitle\s*\}\}/g, actionTitle)
         .replace("{{ actionbtnClass }}", installed ? "uninstall-button-container-oV4Yo" : "install-button-container-yfcq5")
-        .replace("{{ download }}", metaData.download)
-        .replace("{{ repo }}", metaData.repo)
+        .replace("{{ action }}", action)
+        .replace("{{ actionDisabled }}", downloadUrl ? "false" : "true")
+        .replace("{{ actionTabIndex }}", downloadUrl ? "0" : "-1")
+        .replace("{{ download }}", downloadUrl ? escapeHtml(downloadUrl) : "")
+        .replace("{{ repoHref }}", repoUrl ? `href="${escapeHtml(repoUrl)}"` : "")
+        .replace("{{ repoDisabled }}", repoUrl ? "false" : "true")
+        .replace("{{ repoTabIndex }}", repoUrl ? "0" : "-1")
         .replace("<!-- theme preview here -->", logoBlock)
         .replace("<!-- plugin icon here -->", ""); 
 }

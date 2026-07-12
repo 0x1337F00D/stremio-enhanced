@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "src/android/**/*",
+    "src/preload/android/**/*",
+    "src/preload/shared/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "release-builds"
+  ]
+}
