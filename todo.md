@@ -28,7 +28,7 @@
   - [x] Add a custom title bar and disable the window frame
   - [x] Make sure fullscreen works when the option is enabled
 - [x] Fix embedded subs not loading some streams by having manually extracting the subs and loading them.
-- [ ] Clean up preload.ts
+- [x] Clean up preload.ts
 - [ ] Features from Zaarrg/stremio-community-v5
   - [ ] MPV support
     - [ ] Thumbnail preview

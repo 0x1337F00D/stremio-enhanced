@@ -6,16 +6,16 @@ import { MetaData } from "../interfaces/MetaData";
 import { getLogger } from "../utils/logger";
 import { getApplyThemeTemplate } from "../components/apply-theme/applyTheme";
 import { basename, join } from "path";
-import { STORAGE_KEYS, SELECTORS, CLASSES, URLS, FILE_EXTENSIONS } from "../constants";
+import { STORAGE_KEYS, CLASSES, URLS, FILE_EXTENSIONS } from "../constants";
 import ExtractMetaData from "../utils/ExtractMetaData";
 import PluginOptions from "./PluginOptions";
 import reloadApplication from "../utils/reloadApplication";
+import { isSafeModFileName } from "../utils/modFileName";
 
 class ModManager {
     private static logger = getLogger("ModManager");
     private static readonly APPLY_THEME_SCRIPT_ID = "stremio-enhanced-apply-theme-script";
-    private static pluginListenerReady = false;
-    private static pluginListenerSetupPending = false;
+    private static readonly MAX_MOD_DOWNLOAD_BYTES = 5 * 1024 * 1024;
     private static scrollListenerReady = false;
     private static scrollListenerSetupPending = false;
 
@@ -45,24 +45,58 @@ class ModManager {
         fileName: string,
         type: "plugin" | "theme"
     ): string | null {
-        const expectedExtension = type === "theme"
-            ? FILE_EXTENSIONS.THEME
-            : FILE_EXTENSIONS.PLUGIN;
-
         const normalized = this.decodeFileName(basename(fileName).trim());
-        if (!normalized) return null;
-        if (!normalized.endsWith(expectedExtension)) return null;
-        if (!/^[A-Za-z0-9._-]+$/.test(normalized)) return null;
-
-        return normalized;
+        return isSafeModFileName(normalized, type) ? normalized : null;
     }
 
     private static isSupportedRemoteUrl(rawUrl: string): boolean {
         try {
             const url = new URL(rawUrl);
-            return url.protocol === "https:" || url.protocol === "http:";
+            return url.protocol === "https:";
         } catch {
             return false;
+        }
+    }
+
+    private static assertSecureResponseUrl(response: Response, fallbackUrl: string): void {
+        const finalUrl = new URL(response.url || fallbackUrl);
+        if (finalUrl.protocol !== "https:") {
+            throw new Error(`Refused insecure redirect to ${finalUrl.protocol}`);
+        }
+    }
+
+    private static async readLimitedModContent(response: Response): Promise<string> {
+        const contentLength = Number(response.headers.get("content-length"));
+        if (Number.isFinite(contentLength) && contentLength > this.MAX_MOD_DOWNLOAD_BYTES) {
+            throw new Error("Mod download exceeds the 5 MiB size limit");
+        }
+
+        if (!response.body) {
+            const content = await response.text();
+            if (new TextEncoder().encode(content).byteLength > this.MAX_MOD_DOWNLOAD_BYTES) {
+                throw new Error("Mod download exceeds the 5 MiB size limit");
+            }
+            return content;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let bytesRead = 0;
+        let content = "";
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                bytesRead += value.byteLength;
+                if (bytesRead > this.MAX_MOD_DOWNLOAD_BYTES) {
+                    await reader.cancel();
+                    throw new Error("Mod download exceeds the 5 MiB size limit");
+                }
+                content += decoder.decode(value, { stream: true });
+            }
+            return content + decoder.decode();
+        } finally {
+            reader.releaseLock();
         }
     }
     
@@ -70,6 +104,10 @@ class ModManager {
      * Load and enable a plugin by filename
      */
     public static async loadPlugin(pluginName: string): Promise<void> {
+        if (!isSafeModFileName(pluginName, "plugin")) {
+            this.logger.warn(`Refused to load plugin with unsafe filename: ${pluginName}`);
+            return;
+        }
         if (document.getElementById(pluginName)) {
             this.logger.info(`Plugin ${pluginName} is already loaded`);
             return;
@@ -109,11 +147,46 @@ class ModManager {
         
         this.logger.info(`Plugin ${pluginName} loaded!`);
     }
+
+    /**
+     * Load the installed plugins that the user previously enabled.
+     * Discovery and individual plugin failures are isolated so one broken file
+     * cannot prevent the remaining enabled plugins from starting.
+     */
+    public static async loadEnabledPlugins(): Promise<void> {
+        const enabledPlugins = new Set(this.getEnabledPlugins());
+        let installedPlugins: string[];
+
+        try {
+            const pluginsPath = properties.pluginsPath;
+            if (!await PlatformManager.current.exists(pluginsPath)) return;
+
+            installedPlugins = (await PlatformManager.current.readdir(pluginsPath))
+                .filter(fileName => isSafeModFileName(fileName, "plugin"));
+        } catch (error) {
+            this.logger.error(`Failed to discover enabled plugins: ${error}`);
+            return;
+        }
+
+        for (const pluginName of installedPlugins) {
+            if (!enabledPlugins.has(pluginName)) continue;
+
+            try {
+                await this.loadPlugin(pluginName);
+            } catch (error) {
+                this.logger.error(`Failed to load enabled plugin ${pluginName}: ${error}`);
+            }
+        }
+    }
     
     /**
      * Unload and disable a plugin by filename
      */
     public static unloadPlugin(pluginName: string): void {
+        if (!isSafeModFileName(pluginName, "plugin")) {
+            this.logger.warn(`Refused to unload plugin with unsafe filename: ${pluginName}`);
+            return;
+        }
         const pluginElement = document.getElementById(pluginName);
         if (pluginElement) {
             pluginElement.remove();
@@ -125,6 +198,30 @@ class ModManager {
         
         this.logger.info(`Plugin ${pluginName} unloaded!`);
         reloadApplication();
+    }
+
+    public static bindPluginToggle(
+        toggle: HTMLElement,
+        pluginName: string,
+        allowProgrammaticActivation = false
+    ): void {
+        if (!isSafeModFileName(pluginName, "plugin")) {
+            this.logger.warn(`Refused to bind unsafe plugin filename: ${pluginName}`);
+            return;
+        }
+        if (toggle.dataset.stremioEnhancedToggleBound === "true") return;
+
+        toggle.dataset.stremioEnhancedToggleBound = "true";
+        toggle.addEventListener("click", event => {
+            if (!event.isTrusted && !allowProgrammaticActivation) return;
+
+            toggle.classList.toggle(CLASSES.CHECKED);
+            if (toggle.classList.contains(CLASSES.CHECKED)) {
+                void this.loadPlugin(pluginName);
+            } else {
+                this.unloadPlugin(pluginName);
+            }
+        });
     }
 
     /**
@@ -142,12 +239,13 @@ class ModManager {
         this.logger.info(`Downloading ${type} from: ${modLink}`);
 
         const modUrl = new URL(modLink);
-        if (modUrl.protocol !== "https:" && modUrl.protocol !== "http:") {
+        if (modUrl.protocol !== "https:") {
             throw new Error(`Unsupported URL protocol for ${type}: ${modUrl.protocol}`);
         }
 
         const response = await fetch(modUrl.toString());
         if (!response.ok) throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
+        this.assertSecureResponseUrl(response, modUrl.toString());
         
         const saveDir = type === "plugin" ? properties.pluginsPath : properties.themesPath;
         if (!await PlatformManager.current.exists(saveDir)) {
@@ -163,7 +261,7 @@ class ModManager {
 
         const filePath = join(saveDir, filename);
 
-        const content = await response.text();
+        const content = await this.readLimitedModContent(response);
         await PlatformManager.current.writeFile(filePath, content);
 
         this.logger.info(`Downloaded ${type} saved to: ${filePath}`);
@@ -174,6 +272,11 @@ class ModManager {
      * Remove a mod file and clean up associated state
      */
     public static async removeMod(fileName: string, type: "plugin" | "theme"): Promise<void> {
+        const decodedFileName = this.decodeFileName(fileName.trim());
+        if (!isSafeModFileName(decodedFileName, type)) {
+            throw new Error(`Refused to remove ${type} with unsafe filename: ${fileName}`);
+        }
+        fileName = decodedFileName;
         this.logger.info(`Removing ${type} file: ${fileName}`);
 
         switch (type) {
@@ -233,44 +336,6 @@ class ModManager {
         return fileStats.filter(f => f.isFile).map(f => f.file);
     }
     
-    /**
-     * Set up event listeners for plugin toggle checkboxes
-     */
-    public static togglePluginListener(): void {
-        if (this.pluginListenerReady || this.pluginListenerSetupPending) return;
-        this.pluginListenerSetupPending = true;
-
-        helpers.waitForElm(SELECTORS.PLUGINS_CATEGORY).then(() => {
-            this.logger.info("Listening to plugin checkboxes...");
-            const pluginCheckboxes = document.getElementsByClassName("plugin") as HTMLCollectionOf<HTMLElement>;
-            
-            for (let i = 0; i < pluginCheckboxes.length; i++) {
-                if (pluginCheckboxes[i].dataset.stremioEnhancedToggleBound === "true") {
-                    continue;
-                }
-
-                pluginCheckboxes[i].dataset.stremioEnhancedToggleBound = "true";
-                pluginCheckboxes[i].addEventListener("click", async () => {
-                    pluginCheckboxes[i].classList.toggle(CLASSES.CHECKED);
-                    const pluginName = pluginCheckboxes[i].getAttribute('name');
-
-                    if (!pluginName) return;
-
-                    if (pluginCheckboxes[i].classList.contains(CLASSES.CHECKED)) {
-                        await this.loadPlugin(pluginName);
-                    } else {
-                        this.unloadPlugin(pluginName);
-                    }
-                });
-            }
-            this.pluginListenerReady = true;
-        }).catch(err => {
-            this.logger.warn(`Plugin listeners were not ready: ${err}`);
-        }).finally(() => {
-            this.pluginListenerSetupPending = false;
-        });
-    }
-
     public static openThemesFolder(): void {
         helpers.waitForElm("#openthemesfolderBtn").then(() => {
             const button = document.getElementById("openthemesfolderBtn") as HTMLElement | null;
@@ -411,8 +476,9 @@ class ModManager {
                 this.logger.warn(`Failed to fetch update for ${itemFile}: HTTP ${request.status}`);
                 return;
             }
+            this.assertSecureResponseUrl(request, updateUrl);
 
-            const response = await request.text();
+            const response = await this.readLimitedModContent(request);
             const extractedMetaData = ExtractMetaData.extractMetadataFromText(response) as MetaData | null;
             
             if (!extractedMetaData) {

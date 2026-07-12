@@ -4,25 +4,22 @@ import Settings from "../core/Settings";
 import properties from "../core/Properties";
 import ModManager from "../core/ModManager";
 import Helpers from "../utils/Helpers";
-import { getModsTabTemplate } from "../components/mods-tab/modsTab";
-import { getModItemTemplate } from "../components/mods-item/modsItem";
 import { getAboutCategoryTemplate } from "../components/about-category/aboutCategory";
-import { getDefaultThemeTemplate } from "../components/default-theme/defaultTheme";
-import { getBackButton } from "../components/back-btn/backBtn";
 import logger from "../utils/logger";
 import { join } from "path";
 import {
-    STORAGE_KEYS,
     SELECTORS,
-    CLASSES,
     FILE_EXTENSIONS,
     TIMEOUTS,
 } from "../constants";
-import ExtractMetaData from "../utils/ExtractMetaData";
 import { NodeJS } from 'capacitor-nodejs';
 import LogManager from "../core/LogManager";
 import { FilePicker } from '@capawesome/capacitor-file-picker';
 import { createStremioEnhancedApi } from "../core/StremioEnhancedApi";
+import { initializeUserSettings } from "../core/UserSettings";
+import { createEnhancedSettingsController } from "../preload/shared/enhancedSettings";
+import { applyAndroidTheme } from "../preload/android/theme";
+import { isSafeModFileName } from "../utils/modFileName";
 
 // Initialize platform for Capacitor
 PlatformManager.setPlatform(new CapacitorPlatform());
@@ -42,22 +39,6 @@ NodeJS.addListener('error', (data) => {
     console.error('[Server Error]', ...data.args);
     Helpers.showAlert('error', 'Server Error', data.args.join(' '), ['OK']);
 });
-
-// Mock ipcRenderer for Android
-const ipcRenderer = {
-    invoke: async (channel: string, ...args: any[]) => {
-        logger.info(`[Android] Invoke ${channel}`, args);
-        if (channel === 'get-transparency-status') return false;
-        if (channel === 'extract-embedded-subtitles') return [];
-        return null;
-    },
-    send: (channel: string, ...args: any[]) => {
-        logger.info(`[Android] Send ${channel}`, args);
-    },
-    on: (channel: string, listener: any) => {
-        // No-op
-    }
-};
 
 const SETTINGS_ROUTE = "#/settings";
 const PLAYER_ROUTE = "#/player";
@@ -82,8 +63,6 @@ let streamingServerReloadScheduled = false;
 
 const init = async () => {
     LogManager.addLog('INFO', 'Stremio Enhanced: Initialization started');
-    // Initialize platform
-    if (!PlatformManager.current) PlatformManager.setPlatform(new CapacitorPlatform());
     await PlatformManager.current.init();
     void ensureBundledStreamingServerReady();
 
@@ -91,15 +70,15 @@ const init = async () => {
     observeSettingsUi();
     observePlayerUi();
 
-    window.stremioEnhanced = createStremioEnhancedApi(applyUserTheme);
+    window.stremioEnhanced = createStremioEnhancedApi(applyAndroidTheme);
 
-    initializeUserSettings();
+    initializeUserSettings({ checkUpdatesOnStartupDefault: false });
 
     // Apply enabled theme
-    await applyUserTheme();
+    await applyAndroidTheme();
 
     // Load enabled plugins
-    await loadEnabledPlugins();
+    await ModManager.loadEnabledPlugins();
 
     // Handle navigation changes
     window.addEventListener("hashchange", () => {
@@ -126,19 +105,6 @@ if (document.readyState === 'loading') {
     init();
 }
 
-// Settings page opened
-let isCheckingSettings = false;
-
-function isEnhancedSettingsReady(): boolean {
-    return Boolean(
-        document.getElementById("enhanced") &&
-        document.querySelector('[data-section="enhanced"]') &&
-        document.querySelector(SELECTORS.THEMES_CATEGORY) &&
-        document.querySelector(SELECTORS.PLUGINS_CATEGORY) &&
-        document.querySelector(SELECTORS.ABOUT_CATEGORY)
-    );
-}
-
 function bindButtonClick(
     buttonId: string,
     handler: () => void | Promise<void>,
@@ -156,45 +122,7 @@ function bindButtonClick(
     }).catch(err => logger.error(`Failed to setup ${errorContext}: ${err}`));
 }
 
-async function checkSettings() {
-    if (!location.href.includes(SETTINGS_ROUTE)) return;
-    if (isEnhancedSettingsReady()) return;
-
-    if (isCheckingSettings) return;
-    isCheckingSettings = true;
-
-    try {
-        await doCheckSettings();
-    } finally {
-        isCheckingSettings = false;
-    }
-}
-
-async function doCheckSettings() {
-    ModManager.addApplyThemeFunction();
-
-    const themesPath = properties.themesPath;
-    const pluginsPath = properties.pluginsPath;
-
-    let allThemes: string[] = [];
-    let allPlugins: string[] = [];
-
-    try {
-        allThemes = await PlatformManager.current.readdir(themesPath);
-        allPlugins = await PlatformManager.current.readdir(pluginsPath);
-    } catch(e) {
-        logger.error("Failed to read themes/plugins directories: " + e);
-    }
-
-    const themesList = allThemes.filter(fileName => fileName.endsWith(FILE_EXTENSIONS.THEME));
-    const pluginsList = allPlugins.filter(fileName => fileName.endsWith(FILE_EXTENSIONS.PLUGIN));
-
-    logger.info("Adding 'Enhanced' sections...");
-    Settings.addSection("enhanced", "Enhanced");
-    Settings.addCategory("Themes", "enhanced", getThemeIcon());
-    Settings.addCategory("Plugins", "enhanced", getPluginIcon());
-    Settings.addCategory("About", "enhanced", getAboutIcon());
-
+function addAndroidSettingsControls(): void {
     Settings.addButton("Import Theme", "importThemeBtn", SELECTORS.THEMES_CATEGORY);
     Settings.addButton("Manage Themes Folder", "openthemesfolderBtn", SELECTORS.THEMES_CATEGORY);
     Settings.addButton("Import Plugin", "importPluginBtn", SELECTORS.PLUGINS_CATEGORY);
@@ -204,58 +132,15 @@ async function doCheckSettings() {
     setupImportButton("importPluginBtn", "plugin");
     setupManagedFolderButton("openthemesfolderBtn", properties.themesPath);
     setupManagedFolderButton("openpluginsfolderBtn", properties.pluginsPath);
+}
 
-    writeAbout();
+const settingsController = createEnhancedSettingsController({
+    addPlatformControls: addAndroidSettingsControls,
+    renderAbout: writeAbout,
+});
 
-    // Browse plugins/themes from stremio-enhanced-registry
-    setupBrowseModsButton();
-
-    // Add themes to settings
-    Helpers.waitForElm(SELECTORS.THEMES_CATEGORY).then(async () => {
-        // Default theme
-        if (!document.getElementById("stremio-enhanced-default-theme")) {
-            const isCurrentThemeDefault = localStorage.getItem(STORAGE_KEYS.CURRENT_THEME) === "Default";
-            const defaultThemeContainer = document.createElement("div");
-            defaultThemeContainer.id = "stremio-enhanced-default-theme";
-            defaultThemeContainer.innerHTML = getDefaultThemeTemplate(isCurrentThemeDefault);
-            document.querySelector(SELECTORS.THEMES_CATEGORY)?.appendChild(defaultThemeContainer);
-        }
-
-        // Add installed themes
-        await Promise.all(themesList.map(async (theme) => {
-            try {
-                const themePath = join(themesPath, theme);
-                const content = await PlatformManager.current.readFile(themePath);
-                const metaData = ExtractMetaData.extractMetadataFromText(content);
-
-                if (metaData) {
-                    if (metaData.name.toLowerCase() !== "default") {
-                        Settings.addItem("theme", theme, metaData);
-                    }
-                }
-            } catch (e) {
-                logger.error(`Failed to load theme metadata for ${theme}: ${e}`);
-            }
-        }));
-    }).catch(err => logger.error("Failed to setup themes: " + err));
-
-    // Add plugins to settings
-    for (const plugin of pluginsList) {
-        try {
-            const pluginPath = join(pluginsPath, plugin);
-            const content = await PlatformManager.current.readFile(pluginPath);
-            const metaData = ExtractMetaData.extractMetadataFromText(content);
-
-            if (metaData) {
-                Settings.addItem("plugin", plugin, metaData);
-            }
-        } catch (e) {
-            logger.error(`Failed to load plugin metadata for ${plugin}: ${e}`);
-        }
-    }
-
-    ModManager.togglePluginListener();
-    ModManager.scrollListener();
+async function checkSettings(): Promise<void> {
+    await settingsController.check();
 }
 
 async function ensureBundledStreamingServerReady(): Promise<void> {
@@ -332,7 +217,7 @@ function observeSettingsUi(): void {
 
     const startObserver = () => {
         const observer = new MutationObserver(() => {
-            if (location.href.includes(SETTINGS_ROUTE) && !isCheckingSettings && !isEnhancedSettingsReady()) {
+            if (location.href.includes(SETTINGS_ROUTE)) {
                 scheduleSettingsCheck();
             }
         });
@@ -476,86 +361,6 @@ function hideFullscreenControls(): void {
     });
 }
 
-function initializeUserSettings(): void {
-    const defaults: Record<string, string> = {
-        [STORAGE_KEYS.ENABLED_PLUGINS]: "[]",
-        [STORAGE_KEYS.CHECK_UPDATES_ON_STARTUP]: "false",
-        [STORAGE_KEYS.DISCORD_RPC]: "false",
-    };
-
-    for (const [key, defaultValue] of Object.entries(defaults)) {
-        if (!localStorage.getItem(key)) {
-            localStorage.setItem(key, defaultValue);
-        }
-    }
-}
-
-async function applyUserTheme(requestedTheme?: string): Promise<boolean> {
-    const currentTheme = requestedTheme ?? localStorage.getItem(STORAGE_KEYS.CURRENT_THEME);
-
-    if (!currentTheme || currentTheme === "Default") {
-        document.getElementById("activeTheme")?.remove();
-        localStorage.setItem(STORAGE_KEYS.CURRENT_THEME, "Default");
-        return true;
-    }
-
-    if (!/^[A-Za-z0-9._-]+\.theme\.css$/.test(currentTheme)) {
-        logger.warn(`Refused to apply invalid theme name: ${currentTheme}`);
-        return false;
-    }
-
-    const themePath = join(properties.themesPath, currentTheme);
-
-    // In capacitor, we need to read the file content and inject it as style
-    // because file:// URLs might not work or are restricted.
-    // Electron implementation uses pathToFileURL which results in file://.
-    // Let's try to read content and inject <style> instead of <link>.
-
-    try {
-        if (!await PlatformManager.current.exists(themePath)) {
-            localStorage.setItem(STORAGE_KEYS.CURRENT_THEME, "Default");
-            return false;
-        }
-
-        // Remove existing theme if present
-        document.getElementById("activeTheme")?.remove();
-
-        const content = await PlatformManager.current.readFile(themePath);
-
-        const styleElement = document.createElement('style');
-        styleElement.setAttribute("id", "activeTheme");
-        styleElement.textContent = content;
-        document.head.appendChild(styleElement);
-        localStorage.setItem(STORAGE_KEYS.CURRENT_THEME, currentTheme);
-        return true;
-    } catch (e) {
-        logger.error("Failed to apply theme: " + e);
-        return false;
-    }
-}
-
-async function loadEnabledPlugins(): Promise<void> {
-    const pluginsPath = properties.pluginsPath;
-    try {
-        if (!await PlatformManager.current.exists(pluginsPath)) return;
-
-        const allPlugins = await PlatformManager.current.readdir(pluginsPath);
-        const pluginsToLoad = allPlugins.filter(fileName => fileName.endsWith(FILE_EXTENSIONS.PLUGIN));
-
-        const enabledPlugins: string[] = JSON.parse(
-            localStorage.getItem(STORAGE_KEYS.ENABLED_PLUGINS) || "[]"
-        );
-
-        for (const plugin of pluginsToLoad) {
-            if (enabledPlugins.includes(plugin)) {
-                await ModManager.loadPlugin(plugin);
-            }
-        }
-    } catch (e) {
-        logger.error("Failed to load plugins: " + e);
-    }
-}
-
 function setupImportButton(buttonId: string, type: "theme" | "plugin"): void {
     bindButtonClick(buttonId, () => importModFile(type), `${type} import button`);
 }
@@ -566,14 +371,8 @@ function setupManagedFolderButton(buttonId: string, folderPath: string): void {
 
 let isImporting = false;
 function sanitizeImportedModFileName(fileName: string, type: "theme" | "plugin"): string | null {
-    const expectedExtension = type === "theme" ? FILE_EXTENSIONS.THEME : FILE_EXTENSIONS.PLUGIN;
     const normalized = fileName.trim().split(/[\\/]/).pop() || "";
-
-    if (!normalized) return null;
-    if (!normalized.endsWith(expectedExtension)) return null;
-    if (!/^[A-Za-z0-9._-]+$/.test(normalized)) return null;
-
-    return normalized;
+    return isSafeModFileName(normalized, type) ? normalized : null;
 }
 
 async function importModFile(type: "theme" | "plugin"): Promise<void> {
@@ -726,109 +525,6 @@ function getPictureInPictureButtonContainer(): HTMLElement | null {
     return allContainers.at(-1) ?? null;
 }
 
-async function browseMods(): Promise<void> {
-    const settingsContent = document.querySelector(SELECTORS.SETTINGS_CONTENT);
-    if (!settingsContent) return;
-
-    settingsContent.innerHTML = getModsTabTemplate();
-
-    const mods = await ModManager.fetchMods();
-    const modsList = document.getElementById("mods-list");
-    if (!modsList) return;
-
-    interface RegistryMod {
-        name: string;
-        description: string;
-        author: string;
-        version: string;
-        preview?: string;
-        download: string;
-        repo: string;
-    }
-
-    // Add plugins
-    for (const plugin of (mods.plugins as RegistryMod[])) {
-        const installed = await ModManager.isPluginInstalled(Helpers.getFileNameFromUrl(plugin.download));
-        modsList.innerHTML += getModItemTemplate(plugin, "Plugin", installed);
-    }
-
-    // Add themes
-    for (const theme of (mods.themes as RegistryMod[])) {
-        const installed = await ModManager.isThemeInstalled(Helpers.getFileNameFromUrl(theme.download));
-        modsList.innerHTML += getModItemTemplate(theme, "Theme", installed);
-    }
-
-    // Set up action buttons
-    const actionBtns = document.querySelectorAll(".modActionBtn");
-    actionBtns.forEach((btn) => {
-        btn.addEventListener("click", () => {
-            const link = btn.getAttribute("data-link");
-            const type = btn.getAttribute("data-type")?.toLowerCase() as "plugin" | "theme";
-
-            if (!link || !type) return;
-
-            if (btn.getAttribute("title") === "Install") {
-                ModManager.downloadMod(link, type);
-                btn.classList.remove(CLASSES.INSTALL_BUTTON);
-                btn.classList.add(CLASSES.UNINSTALL_BUTTON);
-                btn.setAttribute("title", "Uninstall");
-                if (btn.childNodes[1]) {
-                    btn.childNodes[1].textContent = "Uninstall";
-                }
-            } else {
-                ModManager.removeMod(Helpers.getFileNameFromUrl(link), type);
-                btn.classList.remove(CLASSES.UNINSTALL_BUTTON);
-                btn.classList.add(CLASSES.INSTALL_BUTTON);
-                btn.setAttribute("title", "Install");
-                if (btn.childNodes[1]) {
-                    btn.childNodes[1].textContent = "Install";
-                }
-            }
-        });
-    });
-
-    // Search bar logic
-    setupSearchBar();
-
-    // Add back button
-    const horizontalNavs = document.querySelectorAll(SELECTORS.HORIZONTAL_NAV);
-    const horizontalNav = horizontalNavs[1];
-    if (horizontalNav) {
-        horizontalNav.innerHTML = getBackButton();
-        document.getElementById("back-btn")?.addEventListener("click", () => {
-            location.hash = '#/';
-            setTimeout(() => {
-                location.hash = '#/settings';
-            }, 0);
-        });
-    }
-}
-
-function setupSearchBar(): void {
-    const searchInput = document.querySelector(SELECTORS.SEARCH_INPUT) as HTMLInputElement;
-    const addonsContainer = document.querySelector(SELECTORS.ADDONS_LIST_CONTAINER);
-
-    if (!searchInput || !addonsContainer) return;
-
-    searchInput.addEventListener("input", () => {
-        const filter = searchInput.value.trim().toLowerCase();
-        const modItems = addonsContainer.querySelectorAll(SELECTORS.ADDON_CONTAINER);
-
-        modItems.forEach((item) => {
-            const name = item.querySelector(SELECTORS.NAME_CONTAINER)?.textContent?.toLowerCase() || "";
-            const description = item.querySelector(SELECTORS.DESCRIPTION_ITEM)?.textContent?.toLowerCase() || "";
-            const type = item.querySelector(SELECTORS.TYPES_CONTAINER)?.textContent?.toLowerCase() || "";
-
-            const match = name.includes(filter) || description.includes(filter) || type.includes(filter);
-            (item as HTMLElement).style.display = match ? "" : "none";
-        });
-    });
-}
-
-function setupBrowseModsButton(): void {
-    bindButtonClick("browsePluginsThemesBtn", browseMods, "browse mods button");
-}
-
 function writeAbout(): void {
     Helpers.waitForElm(SELECTORS.ABOUT_CATEGORY).then(async () => {
         const aboutCategory = document.querySelector(SELECTORS.ABOUT_CATEGORY);
@@ -871,21 +567,4 @@ function writeAbout(): void {
             }, "open enhanced folder button");
         }
     }).catch(err => logger.error("Failed to write about section: " + err));
-}
-
-function getAboutIcon(): string {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="icon">
-        <g><path fill="none" d="M0 0h24v24H0z"></path>
-        <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm-1-11v6h2v-6h-2zm0-4v2h2V7h-2z" style="fill:currentcolor"></path></g></svg>`;
-}
-
-function getThemeIcon(): string {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="icon">
-        <g><path fill="none" d="M0 0h24v24H0z"></path>
-        <path d="M4 3h16a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm2 9h6a1 1 0 0 1 1 1v3h1v6h-4v-6h1v-2H5a1 1 0 0 1-1-1v-2h2v1zm11.732 1.732l1.768-1.768 1.768 1.768a2.5 2.5 0 1 1-3.536 0z" style="fill: currentcolor;"></path></g></svg>`;
-}
-
-function getPluginIcon(): string {
-    return `<svg icon="addons-outline" class="icon" viewBox="0 0 512 512" style="fill: currentcolor;">
-        <path d="M413.7 246.1H386c-0.53-0.01-1.03-0.23-1.4-0.6-0.37-0.37-0.59-0.87-0.6-1.4v-77.2a38.94 38.94 0 0 0-11.4-27.5 38.94 38.94 0 0 0-27.5-11.4h-77.2c-0.53-0.01-1.03-0.23-1.4-0.6-0.37-0.37-0.59-0.87-0.6-1.4v-27.7c0-27.1-21.5-49.9-48.6-50.3-6.57-0.1-13.09 1.09-19.2 3.5a49.616 49.616 0 0 0-16.4 10.7 49.823 49.823 0 0 0-11 16.2 48.894 48.894 0 0 0-3.9 19.2v28.5c-0.01 0.53-0.23 1.03-0.6 1.4-0.37 0.37-0.87 0.59-1.4 0.6h-77.2c-10.5 0-20.57 4.17-28 11.6a39.594 39.594 0 0 0-11.6 28v70.4c0.01 0.53 0.23 1.03 0.6 1.4 0.37 0.37 0.87 0.59 1.4 0.6h26.9c29.4 0 53.7 25.5 54.1 54.8 0.4 29.9-23.5 57.2-53.3 57.2H50c-0.53 0.01-1.03 0.23-1.4 0.6-0.37 0.37-0.59 0.87-0.6 1.4v70.4c0 10.5 4.17 20.57 11.6 28s17.5 11.6 28 11.6h70.4c0.53-0.01 1.03-0.23 1.4-0.6 0.37-0.37 0.59-0.87 0.6-1.4V441.2c0-30.3 24.8-56.4 55-57.1 30.1-0.7 57 20.3 57 50.3v27.7c0.01 0.53 0.23 1.03 0.6 1.4 0.37 0.37 0.87 0.59 1.4 0.6h71.1a38.94 38.94 0 0 0 27.5-11.4 38.958 38.958 0 0 0 11.4-27.5v-78c0.01-0.53 0.23-1.03 0.6-1.4 0.37-0.37 0.87-0.59 1.4-0.6h28.5c27.6 0 49.5-22.7 49.5-50.4s-23.2-48.7-50.3-48.7Z" style="stroke:currentcolor;stroke-linecap:round;stroke-linejoin:round;stroke-width:32;fill: currentColor;"></path></svg>`;
 }

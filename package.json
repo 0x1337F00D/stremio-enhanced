@@ -5,6 +5,7 @@
 	"main": "./dist/main.js",
 	"scripts": {
 		"dist": "tsc && node ./copyComponents.js",
+		"typecheck:android": "tsc -p tsconfig.android.json",
 		"watch": "tsc -w",
 		"lint": "cross-env ESLINT_USE_FLAT_CONFIG=false eslint -c .eslintrc.json --ext .ts ./src",
 		"dev": "node -e \"console.clear()\" && npm run dist && npx electron --log-level=3 ./dist/main.js --devtools",

@@ -226,6 +226,9 @@ class Settings {
             "[data-stremio-enhanced-plugin-actions]"
         );
         const pluginToggle = pluginContainer.querySelector<HTMLElement>(".plugin");
+        if (pluginToggle) {
+            ModManager.bindPluginToggle(pluginToggle, fileName);
+        }
         if (actionContainer && pluginToggle && metaData.options?.length) {
             mountPluginOptions({
                 container: pluginContainer,
