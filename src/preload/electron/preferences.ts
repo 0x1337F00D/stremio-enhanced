@@ -5,16 +5,24 @@ import DiscordPresence from "../../core/DiscordPresence";
 import ModManager from "../../core/ModManager";
 import Settings from "../../core/Settings";
 import type { UpdateState } from "../../interfaces/UpdateState";
+import type {
+    MpvPreferences,
+    MpvStatus,
+} from "../../interfaces/NativePlayer";
 import Helpers from "../../utils/Helpers";
 import { getLogger } from "../../utils/logger";
 import { createUpdateModal } from "../../components/update-modal/updateModal";
 import updateClient from "./updateClient";
+import nativePlayerClient from "./nativePlayerClient";
 import { getTransparencyStatus } from "./windowChrome";
 
 const logger = getLogger("DesktopPreferences");
 const promptedDownloadVersions = new Set<string>();
 let latestUpdateState: UpdateState | null = null;
+let latestMpvStatus: MpvStatus | null = null;
 let unsubscribeUpdateState: (() => void) | null = null;
+let mpvPreferenceMutationTail: Promise<void> = Promise.resolve();
+let pendingMpvPreferenceMutations = 0;
 
 function getUpdateStatusText(state: UpdateState): string {
     switch (state.status) {
@@ -227,6 +235,236 @@ function setupTransparencyToggle(): void {
     );
 }
 
+function setMpvStatusText(message: string): void {
+    const status = document.getElementById("stremio-enhanced-mpv-status");
+    if (status) status.textContent = message;
+}
+
+function safeMpvVersion(value: unknown): string | null {
+    return typeof value === "string" && /^[0-9][0-9A-Za-z.+-]{0,63}$/.test(value)
+        ? value
+        : null;
+}
+
+export function renderDesktopMpvStatus(status: MpvStatus): void {
+    latestMpvStatus = status;
+    synchronizeMpvControls(status);
+
+    if (!status.available) {
+        setMpvStatusText("MPV was not found. Choose its executable or install MPV.");
+        return;
+    }
+
+    const version = safeMpvVersion(status.version);
+    const source = status.source === "configured" ? "user-selected" : "auto-detected";
+    setMpvStatusText(
+        `${version ? `MPV ${version}` : "MPV"} is available (${source}).`
+    );
+}
+
+function setMpvControlsVisibility(enabled: boolean): void {
+    const mpvControls = document.getElementById("stremio-enhanced-mpv-controls");
+    if (mpvControls) mpvControls.hidden = !enabled;
+}
+
+function setMpvUserConfigToggle(toggle: HTMLElement, enabled: boolean): void {
+    toggle.classList.toggle(CLASSES.CHECKED, enabled);
+    toggle.setAttribute("aria-checked", String(enabled));
+}
+
+function synchronizeMpvControls(status: MpvStatus): void {
+    const select = document.getElementById("nativePlayerSelect");
+    const userConfigToggle = document.getElementById("mpvUseUserConfig");
+    if (select instanceof HTMLSelectElement) {
+        select.value = status.preferences.enabled ? "mpv" : "disabled";
+    }
+    if (userConfigToggle) {
+        setMpvUserConfigToggle(
+            userConfigToggle,
+            status.preferences.useUserConfiguration
+        );
+    }
+    setMpvControlsVisibility(status.preferences.enabled);
+}
+
+function setMpvControlsSaving(saving: boolean): void {
+    const container = document.getElementById("stremio-enhanced-native-player-controls");
+    const select = document.getElementById("nativePlayerSelect");
+    const userConfigToggle = document.getElementById("mpvUseUserConfig");
+    const selectExecutable = document.getElementById("selectMpvExecutableBtn");
+    const resetExecutable = document.getElementById("resetMpvExecutableBtn");
+
+    if (container) container.setAttribute("aria-busy", String(saving));
+    if (select instanceof HTMLSelectElement) {
+        select.disabled = saving;
+        select.setAttribute("aria-disabled", String(saving));
+    }
+    if (userConfigToggle) {
+        userConfigToggle.setAttribute("aria-disabled", String(saving));
+        userConfigToggle.setAttribute("tabindex", saving ? "-1" : "0");
+    }
+    for (const button of [selectExecutable, resetExecutable]) {
+        if (button instanceof HTMLButtonElement) {
+            const actionBusy =
+                button.dataset.stremioEnhancedMpvActionBusy === "true";
+            button.disabled = saving || actionBusy;
+            button.setAttribute("aria-disabled", String(saving || actionBusy));
+        }
+    }
+}
+
+function currentMpvPreferences(): MpvPreferences {
+    return latestMpvStatus?.preferences ?? {
+        enabled: false,
+        useUserConfiguration: false,
+    };
+}
+
+async function refreshMpvStatus(): Promise<MpvStatus | null> {
+    setMpvStatusText("Detecting MPV…");
+    try {
+        const status = await nativePlayerClient.getMpvStatus();
+        renderDesktopMpvStatus(status);
+        return status;
+    } catch (error) {
+        logger.error(`Failed to read MPV status: ${error}`);
+        setMpvStatusText("MPV status could not be loaded.");
+        return null;
+    }
+}
+
+async function runMpvStatusAction(
+    button: HTMLButtonElement,
+    action: () => Promise<MpvStatus>
+): Promise<void> {
+    if (button.disabled || pendingMpvPreferenceMutations > 0) return;
+    button.dataset.stremioEnhancedMpvActionBusy = "true";
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    try {
+        renderDesktopMpvStatus(await action());
+    } catch (error) {
+        logger.error(`MPV configuration action failed: ${error}`);
+        setMpvStatusText("MPV configuration could not be changed.");
+    } finally {
+        delete button.dataset.stremioEnhancedMpvActionBusy;
+        button.disabled = pendingMpvPreferenceMutations > 0;
+        button.setAttribute(
+            "aria-disabled",
+            String(pendingMpvPreferenceMutations > 0)
+        );
+        button.removeAttribute("aria-busy");
+    }
+}
+
+function queueMpvPreferenceMutation(
+    mutate: (preferences: MpvPreferences) => MpvPreferences
+): void {
+    pendingMpvPreferenceMutations += 1;
+    setMpvControlsSaving(true);
+
+    const operation = async (): Promise<void> => {
+        const previousStatus = latestMpvStatus;
+        const preferences = mutate(currentMpvPreferences());
+        setMpvStatusText("Saving MPV preferences…");
+        try {
+            renderDesktopMpvStatus(
+                await nativePlayerClient.setMpvPreferences(preferences)
+            );
+        } catch (error) {
+            logger.error(`Failed to save MPV preferences: ${error}`);
+            if (previousStatus) synchronizeMpvControls(previousStatus);
+            setMpvStatusText("MPV preferences could not be saved.");
+        }
+    };
+
+    const result = mpvPreferenceMutationTail.then(operation, operation);
+    mpvPreferenceMutationTail = result.then(
+        () => undefined,
+        () => undefined
+    );
+    void result
+        .finally(() => {
+            pendingMpvPreferenceMutations -= 1;
+            if (pendingMpvPreferenceMutations === 0) setMpvControlsSaving(false);
+        })
+        .catch(() => undefined);
+}
+
+export function setDesktopMpvEnabled(enabled: boolean): void {
+    queueMpvPreferenceMutation(preferences => ({
+        ...preferences,
+        enabled,
+    }));
+}
+
+export function toggleDesktopMpvUserConfiguration(): void {
+    queueMpvPreferenceMutation(preferences => ({
+        ...preferences,
+        useUserConfiguration: !preferences.useUserConfiguration,
+    }));
+}
+
+export async function setupNativePlayerControls(): Promise<void> {
+    await Helpers.waitForElm("#nativePlayerSelect");
+
+    const select = document.getElementById("nativePlayerSelect");
+    const userConfigToggle = document.getElementById("mpvUseUserConfig");
+    const selectExecutable = document.getElementById("selectMpvExecutableBtn");
+    const resetExecutable = document.getElementById("resetMpvExecutableBtn");
+    if (
+        !(select instanceof HTMLSelectElement) ||
+        !userConfigToggle ||
+        !(selectExecutable instanceof HTMLButtonElement) ||
+        !(resetExecutable instanceof HTMLButtonElement)
+    ) {
+        return;
+    }
+    if (select.dataset.stremioEnhancedNativePlayerBound === "true") return;
+    select.dataset.stremioEnhancedNativePlayerBound = "true";
+
+    select.addEventListener("change", event => {
+        if (!event.isTrusted) {
+            if (latestMpvStatus) synchronizeMpvControls(latestMpvStatus);
+            return;
+        }
+        setDesktopMpvEnabled(select.value === "mpv");
+    });
+
+    const toggleUserConfiguration = (event: Event): void => {
+        if (!event.isTrusted) {
+            if (latestMpvStatus) synchronizeMpvControls(latestMpvStatus);
+            return;
+        }
+        if (pendingMpvPreferenceMutations > 0) return;
+        toggleDesktopMpvUserConfiguration();
+    };
+    userConfigToggle.addEventListener("click", toggleUserConfiguration);
+    userConfigToggle.addEventListener("keydown", event => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        if (!event.isTrusted) return;
+        event.preventDefault();
+        toggleUserConfiguration(event);
+    });
+
+    selectExecutable.addEventListener("click", event => {
+        if (!event.isTrusted) return;
+        void runMpvStatusAction(
+            selectExecutable,
+            () => nativePlayerClient.selectMpvExecutable()
+        );
+    });
+    resetExecutable.addEventListener("click", event => {
+        if (!event.isTrusted) return;
+        void runMpvStatusAction(
+            resetExecutable,
+            () => nativePlayerClient.resetMpvExecutable()
+        );
+    });
+
+    await refreshMpvStatus();
+}
+
 export function addDesktopSettingsControls(): void {
     Settings.addButton("Open Themes Folder", "openthemesfolderBtn", SELECTORS.THEMES_CATEGORY);
     Settings.addButton("Open Plugins Folder", "openpluginsfolderBtn", SELECTORS.PLUGINS_CATEGORY);
@@ -234,6 +472,9 @@ export function addDesktopSettingsControls(): void {
     setupCheckUpdatesOnStartupToggle();
     setupDiscordToggle();
     setupTransparencyToggle();
+    void setupNativePlayerControls().catch(error => {
+        logger.error(`Failed to initialize native player controls: ${error}`);
+    });
     ModManager.openThemesFolder();
     ModManager.openPluginsFolder();
 }
@@ -247,6 +488,13 @@ export function renderDesktopAbout(): void {
 
         const content = document.createElement("div");
         content.id = "stremio-enhanced-about-content";
+        let mpvStatus = latestMpvStatus;
+        try {
+            mpvStatus = await nativePlayerClient.getMpvStatus();
+            latestMpvStatus = mpvStatus;
+        } catch (error) {
+            logger.error(`Failed to read MPV preferences: ${error}`);
+        }
         let updateState = latestUpdateState;
         if (!updateState) {
             try {
@@ -260,9 +508,13 @@ export function renderDesktopAbout(): void {
             updateState?.currentVersion ?? "unknown",
             localStorage.getItem(STORAGE_KEYS.CHECK_UPDATES_ON_STARTUP) === "true",
             localStorage.getItem(STORAGE_KEYS.DISCORD_RPC) === "true",
-            await getTransparencyStatus()
+            await getTransparencyStatus(),
+            mpvStatus?.preferences.enabled ? "mpv" : "disabled",
+            mpvStatus?.preferences.useUserConfiguration ?? false,
+            true
         );
         aboutCategory.appendChild(content);
+        if (mpvStatus) renderDesktopMpvStatus(mpvStatus);
         if (latestUpdateState) renderDesktopUpdateState(latestUpdateState);
     }).catch(error => logger.error(`Failed to render About settings: ${error}`));
 }

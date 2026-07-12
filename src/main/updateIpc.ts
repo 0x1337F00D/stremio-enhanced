@@ -1,6 +1,7 @@
-import { ipcMain, IpcMainInvokeEvent } from "electron";
-import { IPC_CHANNELS, URLS } from "../constants";
+import { ipcMain } from "electron";
+import { IPC_CHANNELS } from "../constants";
 import { UpdateState } from "../interfaces/UpdateState";
+import { assertTrustedRenderer, isTrustedRendererUrl } from "./trustedRenderer";
 
 export interface UpdateControllerPort {
     getState(): UpdateState;
@@ -8,34 +9,19 @@ export interface UpdateControllerPort {
     quitAndInstall(): boolean;
 }
 
-const TRUSTED_RENDERER_ORIGIN = new URL(URLS.STREMIO_WEB).origin;
-
-export function isTrustedUpdateRendererUrl(rawUrl: string): boolean {
-    try {
-        return new URL(rawUrl).origin === TRUSTED_RENDERER_ORIGIN;
-    } catch {
-        return false;
-    }
-}
-
-function assertTrustedSender(event: IpcMainInvokeEvent): void {
-    const frame = event.senderFrame;
-    if (!frame || frame.parent !== null || !isTrustedUpdateRendererUrl(frame.url)) {
-        throw new Error("Rejected update request from an untrusted renderer");
-    }
-}
+export const isTrustedUpdateRendererUrl = isTrustedRendererUrl;
 
 export function registerUpdateIpc(controller: UpdateControllerPort): void {
     ipcMain.handle(IPC_CHANNELS.UPDATE_STATE_GET, event => {
-        assertTrustedSender(event);
+        assertTrustedRenderer(event);
         return controller.getState();
     });
     ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK, event => {
-        assertTrustedSender(event);
+        assertTrustedRenderer(event);
         return controller.checkForUpdates();
     });
     ipcMain.handle(IPC_CHANNELS.UPDATE_INSTALL, event => {
-        assertTrustedSender(event);
+        assertTrustedRenderer(event);
         return controller.quitAndInstall();
     });
 }

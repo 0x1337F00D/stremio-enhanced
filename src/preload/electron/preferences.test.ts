@@ -9,8 +9,16 @@ const client = vi.hoisted(() => ({
     quitAndInstall: vi.fn(),
     onStateChanged: vi.fn(() => vi.fn()),
 }));
+const nativeClient = vi.hoisted(() => ({
+    getMpvStatus: vi.fn(),
+    selectMpvExecutable: vi.fn(),
+    resetMpvExecutable: vi.fn(),
+    setMpvPreferences: vi.fn(),
+    launchMpv: vi.fn(),
+}));
 
 vi.mock("./updateClient", () => ({ default: client }));
+vi.mock("./nativePlayerClient", () => ({ default: nativeClient }));
 vi.mock("electron", () => ({ ipcRenderer: { send: vi.fn(), invoke: vi.fn() } }));
 vi.mock("../../core/DiscordPresence", () => ({
     default: {
@@ -33,7 +41,13 @@ vi.mock("../../utils/logger", () => ({
     getLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
-import { renderDesktopUpdateState } from "./preferences";
+import {
+    renderDesktopMpvStatus,
+    renderDesktopUpdateState,
+    setDesktopMpvEnabled,
+    setupNativePlayerControls,
+    toggleDesktopMpvUserConfiguration,
+} from "./preferences";
 
 function updateState(overrides: Partial<UpdateState>): UpdateState {
     return {
@@ -114,5 +128,175 @@ describe("desktop update presentation", () => {
 
         finishInstall?.(false);
         await vi.waitFor(() => expect(restart?.disabled).toBe(false));
+    });
+
+    it("never renders an executable path supplied outside the public status contract", () => {
+        document.body.innerHTML = `<div id="stremio-enhanced-mpv-status"></div>`;
+
+        const statusWithPrivateData = {
+            available: true,
+            executablePath: '<img src=x onerror="alert(1)">',
+            version: "0.40.0",
+            source: "configured",
+            message: null,
+            preferences: { enabled: true, useUserConfiguration: false },
+        } as const;
+        renderDesktopMpvStatus(statusWithPrivateData);
+
+        const status = document.getElementById("stremio-enhanced-mpv-status");
+        expect(status?.textContent).toBe("MPV 0.40.0 is available (user-selected).");
+        expect(status?.textContent).not.toContain("Executable");
+        expect(status?.textContent).not.toContain("<img");
+        expect(status?.querySelector("img")).toBeNull();
+    });
+
+    it("loads preferences from main and rejects synthetic mutating events", async () => {
+        document.body.innerHTML = `
+            <div id="stremio-enhanced-native-player-controls">
+            <select id="nativePlayerSelect">
+                <option value="disabled">Built-in</option>
+                <option value="mpv">MPV</option>
+            </select>
+            <div id="stremio-enhanced-mpv-controls">
+                <div id="mpvUseUserConfig" role="switch"></div>
+                <button id="selectMpvExecutableBtn"></button>
+                <button id="resetMpvExecutableBtn"></button>
+                <div id="stremio-enhanced-mpv-status"></div>
+            </div>
+            </div>
+        `;
+        const detected = {
+            available: true,
+            version: "0.40.0",
+            source: "known-path" as const,
+            message: null,
+            preferences: {
+                enabled: true,
+                useUserConfiguration: false,
+            },
+        };
+        nativeClient.getMpvStatus.mockResolvedValue(detected);
+        nativeClient.selectMpvExecutable.mockResolvedValue({
+            ...detected,
+            source: "configured",
+        });
+        nativeClient.resetMpvExecutable.mockResolvedValue(detected);
+        nativeClient.setMpvPreferences.mockResolvedValue(detected);
+
+        await setupNativePlayerControls();
+
+        const select = document.getElementById("nativePlayerSelect") as HTMLSelectElement;
+        const toggle = document.getElementById("mpvUseUserConfig") as HTMLElement;
+        const choose = document.getElementById(
+            "selectMpvExecutableBtn"
+        ) as HTMLButtonElement;
+        const reset = document.getElementById(
+            "resetMpvExecutableBtn"
+        ) as HTMLButtonElement;
+
+        expect(nativeClient.getMpvStatus).toHaveBeenCalledOnce();
+        expect(document.getElementById("stremio-enhanced-mpv-controls")?.hidden)
+            .toBe(false);
+        expect(select.value).toBe("mpv");
+        expect(toggle.getAttribute("aria-checked")).toBe("false");
+
+        toggle.click();
+        expect(nativeClient.setMpvPreferences).not.toHaveBeenCalled();
+        expect(toggle.getAttribute("aria-checked")).toBe("false");
+
+        select.value = "disabled";
+        select.dispatchEvent(new Event("change"));
+        expect(nativeClient.setMpvPreferences).not.toHaveBeenCalled();
+        expect(select.value).toBe("mpv");
+        expect(document.getElementById("stremio-enhanced-mpv-controls")?.hidden)
+            .toBe(false);
+
+        choose.click();
+        reset.click();
+        expect(nativeClient.selectMpvExecutable).not.toHaveBeenCalled();
+        expect(nativeClient.resetMpvExecutable).not.toHaveBeenCalled();
+    });
+
+    it("serializes preference saves and keeps every MPV control disabled", async () => {
+        document.body.innerHTML = `
+            <div id="stremio-enhanced-native-player-controls">
+                <select id="nativePlayerSelect">
+                    <option value="disabled">Built-in</option>
+                    <option value="mpv">MPV</option>
+                </select>
+                <div id="stremio-enhanced-mpv-controls">
+                    <div id="mpvUseUserConfig" role="switch" tabindex="0"></div>
+                    <button id="selectMpvExecutableBtn"></button>
+                    <button id="resetMpvExecutableBtn"></button>
+                    <div id="stremio-enhanced-mpv-status"></div>
+                </div>
+            </div>
+        `;
+        const initialStatus = {
+            available: true,
+            version: "0.40.0",
+            source: "known-path" as const,
+            message: null,
+            preferences: {
+                enabled: true,
+                useUserConfiguration: false,
+            },
+        };
+        nativeClient.getMpvStatus.mockResolvedValue(initialStatus);
+        let resolveFirst: ((status: typeof initialStatus) => void) | undefined;
+        let resolveSecond: ((status: typeof initialStatus) => void) | undefined;
+        nativeClient.setMpvPreferences
+            .mockReturnValueOnce(new Promise(resolve => {
+                resolveFirst = resolve;
+            }))
+            .mockReturnValueOnce(new Promise(resolve => {
+                resolveSecond = resolve;
+            }));
+        await setupNativePlayerControls();
+
+        setDesktopMpvEnabled(false);
+        toggleDesktopMpvUserConfiguration();
+
+        await vi.waitFor(() => {
+            expect(nativeClient.setMpvPreferences).toHaveBeenCalledTimes(1);
+        });
+        expect(nativeClient.setMpvPreferences).toHaveBeenNthCalledWith(1, {
+            enabled: false,
+            useUserConfiguration: false,
+        });
+        const select = document.getElementById("nativePlayerSelect") as HTMLSelectElement;
+        const toggle = document.getElementById("mpvUseUserConfig") as HTMLElement;
+        const choose = document.getElementById(
+            "selectMpvExecutableBtn"
+        ) as HTMLButtonElement;
+        const reset = document.getElementById(
+            "resetMpvExecutableBtn"
+        ) as HTMLButtonElement;
+        expect(select.disabled).toBe(true);
+        expect(toggle.getAttribute("aria-disabled")).toBe("true");
+        expect(choose.disabled).toBe(true);
+        expect(reset.disabled).toBe(true);
+
+        resolveFirst?.({
+            ...initialStatus,
+            preferences: { enabled: false, useUserConfiguration: false },
+        });
+        await vi.waitFor(() => {
+            expect(nativeClient.setMpvPreferences).toHaveBeenCalledTimes(2);
+        });
+        expect(nativeClient.setMpvPreferences).toHaveBeenNthCalledWith(2, {
+            enabled: false,
+            useUserConfiguration: true,
+        });
+        expect(select.disabled).toBe(true);
+
+        resolveSecond?.({
+            ...initialStatus,
+            preferences: { enabled: false, useUserConfiguration: true },
+        });
+        await vi.waitFor(() => expect(select.disabled).toBe(false));
+        expect(toggle.getAttribute("aria-disabled")).toBe("false");
+        expect(choose.disabled).toBe(false);
+        expect(reset.disabled).toBe(false);
     });
 });
