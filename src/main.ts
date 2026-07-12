@@ -8,6 +8,8 @@ import logger, { getLogger } from "./utils/logger";
 import { IPC_CHANNELS, URLS, SERVER_JS_URL } from "./constants";
 import { registerUpdateIpc } from "./main/updateIpc";
 import { isDesktopAutoUpdateSupported } from "./main/updateSupport";
+import { MpvManager } from "./main/mpv";
+import { registerMpvIpc } from "./main/mpvIpc";
 
 // Fix GTK 2/3 and GTK 4 conflict on Linux
 import { app } from 'electron';
@@ -225,6 +227,18 @@ app.on("ready", async () => {
         logger: updaterLogger,
     });
     registerUpdateIpc(updateController);
+
+    const mpvManager = new MpvManager({
+        userDataDirectory: app.getPath("userData"),
+        logger: getLogger("MPV"),
+    });
+    registerMpvIpc(mpvManager, {
+        getTrustedWebContentsId: () => (
+            mainWindow && !mainWindow.isDestroyed()
+                ? mainWindow.webContents.id
+                : null
+        ),
+    });
 
     logger.info("Enhanced version: v" + app.getVersion());
     logger.info("Running on NodeJS version: " + process.version);

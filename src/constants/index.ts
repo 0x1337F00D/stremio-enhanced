@@ -65,6 +65,12 @@ export const IPC_CHANNELS = {
     UPDATE_STATE_GET: 'update:state:get',
     UPDATE_STATE_CHANGED: 'update:state:changed',
     UPDATE_INSTALL: 'update:install',
+    MPV_STATUS: 'mpv:status',
+    MPV_SELECT_EXECUTABLE: 'mpv:select-executable',
+    MPV_RESET_EXECUTABLE: 'mpv:reset-executable',
+    MPV_SET_PREFERENCES: 'mpv:set-preferences',
+    MPV_LAUNCH: 'mpv:launch',
+    MPV_CANCEL_LAUNCH: 'mpv:cancel-launch',
     FULLSCREEN_CHANGED: 'fullscreen-changed',
     EXTRACT_EMBEDDED_SUBTITLES: 'extract-embedded-subtitles',
 } as const;

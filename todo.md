@@ -31,8 +31,9 @@
   - [x] Make sure fullscreen works when the option is enabled
 - [x] Fix embedded subs not loading some streams by having manually extracting the subs and loading them.
 - [x] Clean up preload.ts
-- [ ] Features from Zaarrg/stremio-community-v5
-  - [ ] MPV support
-    - [ ] Thumbnail preview
-    - [ ] Upscale model support
-    - [ ] Native playback
+- [ ] Safe, cross-platform subset of features inspired by Zaarrg/stremio-community-v5
+  - [x] MPV support through a validated native external player process
+    - [x] Native playback without exposing a generic process or MPV command bridge
+    - [x] Opt-in compatibility with an existing user-managed MPV config
+    - [ ] Integrated thumbnail preview support
+    - [ ] Integrated upscale shader/model support

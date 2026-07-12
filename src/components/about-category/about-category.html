@@ -41,6 +41,63 @@
 <p style="color:gray;">This option has to be enabled for themes that support transparency to work. (experimental)</p>
 <br/>
 
+<div id="stremio-enhanced-native-player-controls" style="{{ nativePlayerControlsDisplay }}">
+    <div class="option-vFOAS">
+        <div class="heading-dYMDt">
+            <label class="label-qI6Vh" for="nativePlayerSelect">Video player</label>
+        </div>
+        <div class="content-P2T0i">
+            <select id="nativePlayerSelect" aria-label="Video player">
+                <option value="disabled" {{ nativePlayerDisabledSelected }}>Disabled (built-in player)</option>
+                <option value="mpv" {{ nativePlayerMpvSelected }}>MPV (native external player)</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="stremio-enhanced-mpv-controls">
+        <div class="option-vFOAS">
+            <div class="heading-dYMDt">
+                <div class="label-qI6Vh">Use normal MPV config (ThumbFast/shaders/models)</div>
+            </div>
+            <div class="content-P2T0i">
+                <div
+                    tabindex="0"
+                    role="switch"
+                    aria-checked="false"
+                    class="toggle-container-lZfHP button-container-zVLH6 {{ mpvUseUserConfiguration }}"
+                    id="mpvUseUserConfig"
+                >
+                    <div class="toggle-toOWM"></div>
+                </div>
+            </div>
+        </div>
+
+        <p style="color:gray;">
+            Off starts MPV with an isolated configuration. Turn this on to load your normal MPV scripts, shaders, and models.
+        </p>
+
+        <div class="option-vFOAS">
+            <div class="content-P2T0i" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <button type="button" class="button-DNmYL button-container-zVLH6 button" id="selectMpvExecutableBtn">
+                    Choose MPV executable
+                </button>
+                <button type="button" class="button-DNmYL button-container-zVLH6 button" id="resetMpvExecutableBtn">
+                    Reset / auto-detect
+                </button>
+            </div>
+        </div>
+
+        <div
+            id="stremio-enhanced-mpv-status"
+            role="status"
+            aria-live="polite"
+            style="color:gray; overflow-wrap:anywhere; margin-bottom: 1rem;"
+        ></div>
+    </div>
+</div>
+
+<br/>
+
 <div class="option-vFOAS">
     <div class="content-P2T0i">
         <div tabindex="0" title="Community Plugins &amp; Themes" class="button-DNmYL button-container-zVLH6 button" id="browsePluginsThemesBtn">

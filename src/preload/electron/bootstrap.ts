@@ -5,6 +5,7 @@ import { STORAGE_KEYS } from "../../constants";
 import { PlatformManager } from "../../platform/PlatformManager";
 import { createEnhancedSettingsController } from "../shared/enhancedSettings";
 import { checkPlaybackSubtitles } from "./playbackSubtitles";
+import { launchNativePlayerForCurrentRoute } from "./nativePlayerPlayback";
 import {
     addDesktopSettingsControls,
     initializeDesktopUpdates,
@@ -23,13 +24,24 @@ const settingsController = createEnhancedSettingsController({
 });
 
 let initialized = false;
+let routeSyncGeneration = 0;
 const logger = getLogger("ElectronPreload");
 
 async function syncRouteFeatures(): Promise<void> {
-    const results = await Promise.allSettled([
-        settingsController.check(),
-        checkPlaybackSubtitles(),
-    ]);
+    const generation = ++routeSyncGeneration;
+    const route = location.href;
+    let nativeLaunchSucceeded = false;
+    try {
+        nativeLaunchSucceeded = await launchNativePlayerForCurrentRoute();
+    } catch (error) {
+        logger.error(`Failed to synchronize native playback: ${error}`);
+    }
+    if (generation !== routeSyncGeneration || location.href !== route) return;
+
+    const routeFeatures: Array<Promise<void>> = [settingsController.check()];
+    if (!nativeLaunchSucceeded) routeFeatures.push(checkPlaybackSubtitles());
+
+    const results = await Promise.allSettled(routeFeatures);
     for (const result of results) {
         if (result.status === "rejected") {
             logger.error(`Failed to sync route feature: ${result.reason}`);
