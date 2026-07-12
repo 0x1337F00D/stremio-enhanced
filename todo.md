@@ -16,6 +16,8 @@
 - [x] In-app patch notes when an update is available.
 - [x] Support having options for plugins.
 - [ ] Improve update system: auto update so user doesn't have to download anything manually. ⭐
+  - [x] Main-process updater, safe renderer UI/IPC, and signed release workflow foundation
+  - [ ] Provision signing/notarization credentials and verify packaged N to N+1 updates on every desktop platform
 - [x] Auto download Stremio Service for the user if an installation is not detected.
 - [x] Support addons links by opening directly: instead of having the user copy and paste links. ⭐
 - [x] In-app plugins/themes list to browse and find new plugins/themes.

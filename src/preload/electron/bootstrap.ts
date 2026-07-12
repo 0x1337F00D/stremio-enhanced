@@ -1,6 +1,5 @@
 import DiscordPresence from "../../core/DiscordPresence";
 import ModManager from "../../core/ModManager";
-import Updater from "../../core/Updater";
 import { initializeUserSettings } from "../../core/UserSettings";
 import { STORAGE_KEYS } from "../../constants";
 import { PlatformManager } from "../../platform/PlatformManager";
@@ -8,12 +7,15 @@ import { createEnhancedSettingsController } from "../shared/enhancedSettings";
 import { checkPlaybackSubtitles } from "./playbackSubtitles";
 import {
     addDesktopSettingsControls,
+    initializeDesktopUpdates,
     renderDesktopAbout,
+    renderDesktopUpdateState,
 } from "./preferences";
 import { scheduleStreamingServerReload } from "./streamingServer";
 import { applyElectronTheme } from "./theme";
 import { installWindowChrome } from "./windowChrome";
 import { getLogger } from "../../utils/logger";
+import updateClient from "./updateClient";
 
 const settingsController = createEnhancedSettingsController({
     addPlatformControls: addDesktopSettingsControls,
@@ -42,9 +44,14 @@ export async function initializeElectronPreload(): Promise<void> {
     await PlatformManager.current.init();
     initializeUserSettings({ checkUpdatesOnStartupDefault: true });
     scheduleStreamingServerReload();
+    await initializeDesktopUpdates();
 
     if (localStorage.getItem(STORAGE_KEYS.CHECK_UPDATES_ON_STARTUP) === "true") {
-        await Updater.checkForUpdates(false);
+        try {
+            renderDesktopUpdateState(await updateClient.checkForUpdates());
+        } catch (error) {
+            logger.error(`Startup update check failed: ${error}`);
+        }
     }
 
     if (localStorage.getItem(STORAGE_KEYS.DISCORD_RPC) === "true") {

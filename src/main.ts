@@ -1,10 +1,13 @@
 import { join } from "path";
 import { existsSync, writeFileSync, unlinkSync, promises } from "fs";
 import helpers from './utils/Helpers';
-import Updater from "./core/Updater";
+import { autoUpdater } from "electron-updater";
+import { UpdateController } from "./core/Updater";
 import Properties from "./core/Properties";
-import logger from "./utils/logger";
+import logger, { getLogger } from "./utils/logger";
 import { IPC_CHANNELS, URLS, SERVER_JS_URL } from "./constants";
+import { registerUpdateIpc } from "./main/updateIpc";
+import { isDesktopAutoUpdateSupported } from "./main/updateSupport";
 
 // Fix GTK 2/3 and GTK 4 conflict on Linux
 import { app } from 'electron';
@@ -86,7 +89,12 @@ async function createWindow() {
         maximizable: true,
         fullscreenable: true,
         useContentSize: true,
-        icon: "./images/icon.ico",
+        icon: join(
+            __dirname,
+            "..",
+            "images",
+            process.platform === "linux" ? "icon.png" : "icon.ico"
+        ),
         frame: transparencyEnabled ? false : true,
         transparent: transparencyEnabled,
         hasShadow: false,
@@ -125,18 +133,6 @@ async function createWindow() {
     
     ipcMain.on(IPC_CHANNELS.CLOSE_WINDOW, () => {
         mainWindow?.close();
-    });
-    
-    ipcMain.on(IPC_CHANNELS.UPDATE_CHECK_STARTUP, async (_, checkForUpdatesOnStartup: string) => {
-        logger.info(`Checking for updates on startup: ${checkForUpdatesOnStartup === "true" ? "enabled" : "disabled"}.`);
-        if (checkForUpdatesOnStartup === "true") {
-            await Updater.checkForUpdates(false);
-        }
-    });
-    
-    ipcMain.on(IPC_CHANNELS.UPDATE_CHECK_USER, async () => {
-        logger.info("Checking for updates on user request.");
-        await Updater.checkForUpdates(true);
     });
     
     ipcMain.on(IPC_CHANNELS.SET_TRANSPARENCY, (_, enabled: boolean) => {
@@ -212,7 +208,25 @@ async function useStremioService() {
 }
 
 app.on("ready", async () => {
-    logger.info("Enhanced version: v" + Updater.getCurrentVersion());
+    const updaterLogger = getLogger("Updater");
+    autoUpdater.logger = updaterLogger;
+    const updateController = new UpdateController(autoUpdater, {
+        isSupported: isDesktopAutoUpdateSupported({
+            isPackaged: app.isPackaged,
+            platform: process.platform,
+            environment: process.env,
+        }),
+        currentVersion: app.getVersion(),
+        broadcast: state => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send(IPC_CHANNELS.UPDATE_STATE_CHANGED, state);
+            }
+        },
+        logger: updaterLogger,
+    });
+    registerUpdateIpc(updateController);
+
+    logger.info("Enhanced version: v" + app.getVersion());
     logger.info("Running on NodeJS version: " + process.version);
     logger.info("Running on Electron version: v" + process.versions.electron);
     logger.info("Running on Chromium version: v" + process.versions.chrome);
