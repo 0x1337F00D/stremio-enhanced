@@ -66,7 +66,14 @@ class ModManager {
             return;
         }
 
-        const plugin = await PlatformManager.current.readFile(pluginPath);
+        let plugin: string;
+        try {
+            plugin = await PlatformManager.current.readFile(pluginPath);
+        } catch (error) {
+            this.logger.error(`Failed to read plugin ${pluginName}: ${error}`);
+            return;
+        }
+
         const script = document.createElement("script");
         script.innerHTML = plugin;
         script.id = pluginName;
