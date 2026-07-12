@@ -23,7 +23,7 @@ Typical MPV configuration directories are `%APPDATA%\mpv` on Windows and `~/.con
 
 Stremio Enhanced does not bundle MPV, ThumbFast, Anime4K, shaders, or model runtimes. Users remain responsible for reviewing and installing those components and their licenses. The integration accepts no renderer-supplied executable path, MPV command, property name, title, script, shader path, or arbitrary command-line argument.
 
-Integrated thumbnail generation and integrated upscale-model management remain separate, unfinished features. Enabling a normal MPV configuration only allows an existing user setup to behave as it normally would in MPV.
+Thumbnail generation and upscale-model management intentionally remain user-managed. [ThumbFast](https://github.com/po5/thumbfast) does not render thumbnails by itself; it also requires a compatible MPV UI script. Bundling that stack would replace part of the user's MPV UI and add another executable/script supply chain. Anime4K and similar shaders are content-, GPU-, driver-, and performance-profile choices rather than safe universal defaults. Enabling a normal MPV configuration lets a reviewed existing setup behave as it normally would without Stremio Enhanced silently installing or updating those components.
 
 ## Intentional scope
 
