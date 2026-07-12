@@ -64,16 +64,6 @@ export const IPC_CHANNELS = {
     UPDATE_CHECK_USER: 'update-check-userrequest',
     FULLSCREEN_CHANGED: 'fullscreen-changed',
     EXTRACT_EMBEDDED_SUBTITLES: 'extract-embedded-subtitles',
-    READ_FILE: 'read-file',
-    WRITE_FILE: 'write-file',
-    READ_DIR: 'read-dir',
-    EXISTS: 'exists',
-    UNLINK: 'unlink',
-    MKDIR: 'mkdir',
-    STAT: 'stat',
-    OPEN_PATH: 'open-path',
-    OPEN_EXTERNAL: 'open-external',
-    GET_PATHS: 'get-paths',
 } as const;
 
 // File extensions for mods

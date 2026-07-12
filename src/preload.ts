@@ -14,6 +14,8 @@ import { getDefaultThemeTemplate } from "./components/default-theme/defaultTheme
 import { getBackButton } from "./components/back-btn/backBtn";
 import { getTitleBarTemplate } from "./components/title-bar/titleBar";
 import logger from "./utils/logger";
+import { join } from "path";
+import { pathToFileURL } from "url";
 import { 
     STORAGE_KEYS, 
     SELECTORS, 
@@ -25,6 +27,7 @@ import {
 import ExtractMetaData from "./utils/ExtractMetaData";
 import ExtractedSubtitle from "./interfaces/ExtractedSubtitle";
 import PlaybackState from "./utils/PlaybackState";
+import { resolveManagedFilePath } from "./utils/managedPath";
 
 // Initialize platform for Electron
 PlatformManager.setPlatform(new ElectronPlatform());
@@ -39,10 +42,9 @@ async function getTransparencyStatus(): Promise<boolean> {
     return transparencyStatusCache ?? false;
 }
 
-// Expose stremioEnhanced API using contextBridge
 contextBridge.exposeInMainWorld("stremioEnhanced", {
-    applyTheme: async () => {
-        await applyUserTheme();
+    applyTheme: async (theme: unknown): Promise<boolean> => {
+        return typeof theme === "string" && applyUserTheme(theme);
     }
 });
 
@@ -168,7 +170,7 @@ async function doCheckSettings() {
         // Add installed themes
         for (const theme of themesList) {
             try {
-                const themePath = `${themesPath}/${theme}`;
+                const themePath = join(themesPath, theme);
                 const content = await PlatformManager.current.readFile(themePath);
                 const metaData = ExtractMetaData.extractMetadataFromText(content);
 
@@ -193,7 +195,7 @@ async function doCheckSettings() {
     // Add plugins to settings
     for (const plugin of pluginsList) {
         try {
-            const pluginPath = `${pluginsPath}/${plugin}`;
+            const pluginPath = join(pluginsPath, plugin);
             const content = await PlatformManager.current.readFile(pluginPath);
             const metaData = ExtractMetaData.extractMetadataFromText(content);
 
@@ -316,38 +318,41 @@ function initializeUserSettings(): void {
     }
 }
 
-async function applyUserTheme(): Promise<void> {
-    const currentTheme = localStorage.getItem(STORAGE_KEYS.CURRENT_THEME);
+async function applyUserTheme(requestedTheme?: string): Promise<boolean> {
+    const currentTheme = requestedTheme ?? localStorage.getItem(STORAGE_KEYS.CURRENT_THEME);
     
     if (!currentTheme || currentTheme === "Default") {
+        document.getElementById("activeTheme")?.remove();
         localStorage.setItem(STORAGE_KEYS.CURRENT_THEME, "Default");
-        return;
+        return true;
     }
     
-    const themePath = `${properties.themesPath}/${currentTheme}`;
+    const themePath = resolveManagedFilePath(
+        properties.themesPath,
+        currentTheme,
+        FILE_EXTENSIONS.THEME
+    );
+    if (!themePath) {
+        logger.warn(`Refused to apply invalid theme name: ${currentTheme}`);
+        return false;
+    }
     
     if (!await PlatformManager.current.exists(themePath)) {
         localStorage.setItem(STORAGE_KEYS.CURRENT_THEME, "Default");
-        return;
+        return false;
     }
     
     // Remove existing theme if present
     document.getElementById("activeTheme")?.remove();
     
-    let fileUrl = themePath;
-    if (!fileUrl.startsWith('file://')) {
-        if (fileUrl.match(/^[a-zA-Z]:/)) {
-            fileUrl = 'file:///' + fileUrl.replace(/\\/g, '/');
-        } else {
-            fileUrl = 'file://' + fileUrl;
-        }
-    }
-
     const themeElement = document.createElement('link');
     themeElement.setAttribute("id", "activeTheme");
     themeElement.setAttribute("rel", "stylesheet");
-    themeElement.setAttribute("href", fileUrl);
+    themeElement.setAttribute("href", pathToFileURL(themePath).toString());
     document.head.appendChild(themeElement);
+
+    localStorage.setItem(STORAGE_KEYS.CURRENT_THEME, currentTheme);
+    return true;
 }
 
 async function loadEnabledPlugins(): Promise<void> {

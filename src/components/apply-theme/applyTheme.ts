@@ -1,75 +1,48 @@
-import Properties from '../../core/Properties';
-
-let cachedTemplate: string | null = null;
-
 export function getApplyThemeTemplate(): string {
-    // Note: This loads a .js file, not HTML, so we don't use template cache
-    const template = `function applyTheme(theme) {
-    console.log("applying " + theme);
+    return `
+    async function applyTheme(theme) {
+        console.log("applying " + theme);
+        const currentTheme = localStorage.getItem("currentTheme");
 
-    const activeThemeElement = document.getElementById("activeTheme");
-    if (activeThemeElement) {
-        activeThemeElement.remove();
-    }
+        if (!window.stremioEnhanced?.applyTheme) {
+            console.error("Stremio Enhanced theme bridge is unavailable");
+            return;
+        }
 
-    if (theme !== "Default") {
-        const themeElement = document.createElement("link");
-        themeElement.id = "activeTheme";
-        themeElement.rel = "stylesheet";
-        themeElement.href = \`{{ themesPath }}/\${theme}\`;
+        const applied = await window.stremioEnhanced.applyTheme(theme);
+        if (!applied) return;
 
-        document.head.appendChild(themeElement);
-    }
+        if (currentTheme) {
+            const currentThemeElement = document.getElementById(currentTheme);
+            if (currentThemeElement) {
+                currentThemeElement.classList.remove("disabled");
 
-    const currentTheme = localStorage.getItem("currentTheme");
-    if (currentTheme) {
-        console.log("[ Theme ] Disabling " + currentTheme + " as an active theme");
+                if (currentTheme !== "Default") {
+                    currentThemeElement.classList.remove("uninstall-button-container-oV4Yo");
+                    currentThemeElement.classList.add("install-button-container-yfcq5");
+                } else {
+                    currentThemeElement.style.backgroundColor = "var(--secondary-accent-color)";
+                }
 
-        const currentThemeElement = document.getElementById(currentTheme);
-        if (currentThemeElement) {
-            currentThemeElement.classList.remove("disabled");
+                currentThemeElement.innerText = "Apply";
+            }
+        }
 
-            if (currentTheme !== "Default") {
-                currentThemeElement.classList.remove("uninstall-button-container-oV4Yo");
-                currentThemeElement.classList.add("install-button-container-yfcq5");
+        localStorage.setItem("currentTheme", theme);
+
+        const newThemeElement = document.getElementById(theme);
+        if (newThemeElement) {
+            newThemeElement.classList.add("disabled");
+
+            if (theme !== "Default") {
+                newThemeElement.classList.remove("install-button-container-yfcq5");
+                newThemeElement.classList.add("uninstall-button-container-oV4Yo");
             } else {
-                currentThemeElement.style.backgroundColor = "var(--secondary-accent-color)";
+                newThemeElement.style.backgroundColor = "var(--overlay-color)";
             }
 
-            currentThemeElement.innerText = "Apply";
+            newThemeElement.innerText = "Applied";
         }
     }
-
-    localStorage.setItem("currentTheme", theme);
-    console.log("[ Theme ] Disabling " + theme + " as an active theme");
-
-    const newThemeElement = document.getElementById(theme);
-    if (newThemeElement) {
-        newThemeElement.classList.add("disabled");
-
-        if (theme !== "Default") {
-            newThemeElement.classList.remove("install-button-container-yfcq5");
-            newThemeElement.classList.add("uninstall-button-container-oV4Yo");
-        } else {
-            newThemeElement.style.backgroundColor = "var(--overlay-color)";
-        }
-
-        newThemeElement.innerText = "Applied";
-    }
-
-    console.log(\`[ Theme ] \${theme} applied!\`);
-}`;
-
-    // Convert path to file URL without using the 'url' module directly to avoid Node dependencies
-    let themeBaseURL = Properties.themesPath;
-    if (!themeBaseURL.startsWith('file://')) {
-        // Handle Windows paths
-        if (themeBaseURL.match(/^[a-zA-Z]:/)) {
-            themeBaseURL = 'file:///' + themeBaseURL.replace(/\\/g, '/');
-        } else {
-            themeBaseURL = 'file://' + themeBaseURL;
-        }
-    }
-
-    return cachedTemplate.replace("{{ themesPath }}", themeBaseURL);
+    `;
 }
