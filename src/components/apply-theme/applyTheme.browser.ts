@@ -1,15 +1,17 @@
 export function getApplyThemeTemplate(): string {
     return `
-    function applyTheme(theme) {
+    async function applyTheme(theme) {
         console.log("applying " + theme);
+        const currentTheme = localStorage.getItem("currentTheme");
 
-        // Call the native/preload handler to actually load the CSS
-        if (window.stremioEnhanced && window.stremioEnhanced.applyTheme) {
-            window.stremioEnhanced.applyTheme(theme);
+        if (!window.stremioEnhanced?.applyTheme) {
+            console.error("Stremio Enhanced theme bridge is unavailable");
+            return;
         }
 
-        // UI Updates
-        const currentTheme = localStorage.getItem("currentTheme");
+        const applied = await window.stremioEnhanced.applyTheme(theme);
+        if (!applied) return;
+
         if (currentTheme) {
             const currentThemeElement = document.getElementById(currentTheme);
             if (currentThemeElement) {
@@ -41,6 +43,17 @@ export function getApplyThemeTemplate(): string {
 
             newThemeElement.innerText = "Applied";
         }
+    }
+
+    if (!document.documentElement.dataset.stremioEnhancedThemeClickBound) {
+        document.documentElement.dataset.stremioEnhancedThemeClickBound = "true";
+        document.addEventListener("click", (event) => {
+            const target = event.target instanceof Element
+                ? event.target.closest("[data-stremio-enhanced-apply-theme]")
+                : null;
+            const theme = target?.getAttribute("data-stremio-enhanced-apply-theme");
+            if (theme) void applyTheme(theme);
+        });
     }
     `;
 }

@@ -5,6 +5,7 @@ import ExtractMetaData from '../ExtractMetaData';
 vi.mock('../logger', () => ({
     default: {
         error: vi.fn(),
+        warn: vi.fn(),
     }
 }));
 
@@ -143,5 +144,56 @@ describe('ExtractMetaData.parseMetadataFromContent', () => {
             author: 'Space Author',
             version: '1.0.0',
         });
+    });
+
+    it('extracts repeated, typed plugin options', () => {
+        const content = `
+            /**
+             * @name Configurable Plugin
+             * @description A plugin with settings
+             * @author Test Author
+             * @version 1.0.0
+             * @option {"id":"enabled","type":"boolean","label":"Enabled","default":true}
+             * @option {"id":"label","type":"text","label":"Label","default":"Demo","maxLength":20}
+             * @option {"id":"scale","type":"number","label":"Scale","default":2,"min":1,"max":4,"step":0.5}
+             * @option {"id":"mode","type":"select","label":"Mode","default":"a","choices":[{"value":"a","label":"Mode A"},{"value":"b","label":"Mode B"}]}
+             */
+        `;
+
+        expect(ExtractMetaData.extractMetadataFromText(content)?.options).toEqual([
+            { id: 'enabled', type: 'boolean', label: 'Enabled', default: true },
+            { id: 'label', type: 'text', label: 'Label', default: 'Demo', maxLength: 20 },
+            { id: 'scale', type: 'number', label: 'Scale', default: 2, min: 1, max: 4, step: 0.5 },
+            {
+                id: 'mode',
+                type: 'select',
+                label: 'Mode',
+                default: 'a',
+                choices: [
+                    { value: 'a', label: 'Mode A' },
+                    { value: 'b', label: 'Mode B' },
+                ],
+            },
+        ]);
+    });
+
+    it('ignores malformed, unsupported, and duplicate plugin options', () => {
+        const content = `
+            /**
+             * @name Configurable Plugin
+             * @description A plugin with settings
+             * @author Test Author
+             * @version 1.0.0
+             * @option {not-json}
+             * @option {"id":"valid","type":"boolean","label":"Valid","default":false}
+             * @option {"id":"valid","type":"text","label":"Duplicate","default":"ignored"}
+             * @option {"id":"unsupported","type":"color","label":"Color","default":"red"}
+             * @option {"id":"badSelect","type":"select","label":"Mode","default":"missing","choices":[{"value":"a","label":"Mode A"}]}
+             */
+        `;
+
+        expect(ExtractMetaData.extractMetadataFromText(content)?.options).toEqual([
+            { id: 'valid', type: 'boolean', label: 'Valid', default: false },
+        ]);
     });
 });

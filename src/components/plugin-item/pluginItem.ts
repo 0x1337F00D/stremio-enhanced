@@ -1,5 +1,6 @@
 import TemplateCache from '../../utils/templateCache';
 import { MetaData } from '../../interfaces/MetaData';
+import escapeHtml from '../../utils/escapeHtml';
 
 export function getPluginItemTemplate(
     filename: string, 
@@ -12,10 +13,10 @@ export function getPluginItemTemplate(
     const metaKeys = ['name', 'description', 'author', 'version'] as const;
     metaKeys.forEach(key => {
         const regex = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
-        template = template.replace(regex, metaData[key] || '');
+        template = template.replace(regex, escapeHtml(metaData[key] || ''));
     });
 
     return template
         .replace("{{ checked }}", checked ? "checked" : "")
-        .replace(/\{\{\s*fileName\s*\}\}/g, filename);
+        .replace(/\{\{\s*fileName\s*\}\}/g, escapeHtml(filename));
 }

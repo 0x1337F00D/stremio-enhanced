@@ -1,3 +1,5 @@
+import { PluginOptionDefinition } from "./PluginOption";
+
 /**
  * Metadata structure for plugins and themes
  * Extracted from JSDoc-style comments in mod files
@@ -19,9 +21,11 @@ export interface MetaData {
     license?: string;
     /** Homepage/documentation URL (optional) */
     homepage?: string;
+    /** Validated configuration fields exposed by a plugin (optional) */
+    options?: PluginOptionDefinition[];
 }
 
-export type MetadataKey = keyof MetaData;
+export type MetadataKey = Exclude<keyof MetaData, "options">;
 
 export const REQUIRED_METADATA_KEYS = [
     "name",

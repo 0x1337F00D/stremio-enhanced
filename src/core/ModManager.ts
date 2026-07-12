@@ -8,6 +8,8 @@ import { getApplyThemeTemplate } from "../components/apply-theme/applyTheme";
 import { basename, join } from "path";
 import { STORAGE_KEYS, SELECTORS, CLASSES, URLS, FILE_EXTENSIONS } from "../constants";
 import ExtractMetaData from "../utils/ExtractMetaData";
+import PluginOptions from "./PluginOptions";
+import reloadApplication from "../utils/reloadApplication";
 
 class ModManager {
     private static logger = getLogger("ModManager");
@@ -16,6 +18,20 @@ class ModManager {
     private static pluginListenerSetupPending = false;
     private static scrollListenerReady = false;
     private static scrollListenerSetupPending = false;
+
+    private static getEnabledPlugins(): string[] {
+        try {
+            const storedValue: unknown = JSON.parse(
+                localStorage.getItem(STORAGE_KEYS.ENABLED_PLUGINS) || "[]"
+            );
+            return Array.isArray(storedValue)
+                ? storedValue.filter((value): value is string => typeof value === "string")
+                : [];
+        } catch (error) {
+            this.logger.warn(`Failed to parse enabled plugins: ${error}`);
+            return [];
+        }
+    }
 
     private static decodeFileName(fileName: string): string {
         try {
@@ -74,15 +90,17 @@ class ModManager {
             return;
         }
 
+        const metaData = ExtractMetaData.extractMetadataFromText(plugin);
+        PluginOptions.register(pluginName, metaData?.options ?? []);
+
         const script = document.createElement("script");
-        script.innerHTML = plugin;
+        script.textContent = plugin;
         script.id = pluginName;
+        script.dataset.stremioEnhancedPlugin = pluginName;
         
         document.body.appendChild(script);
         
-        const enabledPlugins: string[] = JSON.parse(
-            localStorage.getItem(STORAGE_KEYS.ENABLED_PLUGINS) || "[]"
-        );
+        const enabledPlugins = this.getEnabledPlugins();
         
         if (!enabledPlugins.includes(pluginName)) {
             enabledPlugins.push(pluginName);
@@ -101,13 +119,12 @@ class ModManager {
             pluginElement.remove();
         }
         
-        let enabledPlugins: string[] = JSON.parse(
-            localStorage.getItem(STORAGE_KEYS.ENABLED_PLUGINS) || "[]"
-        );
+        let enabledPlugins = this.getEnabledPlugins();
         enabledPlugins = enabledPlugins.filter((x: string) => x !== pluginName);
         localStorage.setItem(STORAGE_KEYS.ENABLED_PLUGINS, JSON.stringify(enabledPlugins));
         
         this.logger.info(`Plugin ${pluginName} unloaded!`);
+        reloadApplication();
     }
 
     /**
@@ -162,13 +179,11 @@ class ModManager {
         switch (type) {
             case "plugin":
                 if (await this.isPluginInstalled(fileName)) {
+                    const wasEnabled = this.getEnabledPlugins().includes(fileName);
                     await PlatformManager.current.unlink(join(properties.pluginsPath, fileName));
-                    let enabledPlugins: string[] = JSON.parse(
-                        localStorage.getItem(STORAGE_KEYS.ENABLED_PLUGINS) || "[]"
-                    );
-                    if (enabledPlugins.includes(fileName)) {
-                        enabledPlugins = enabledPlugins.filter((x: string) => x !== fileName);
-                        localStorage.setItem(STORAGE_KEYS.ENABLED_PLUGINS, JSON.stringify(enabledPlugins));
+                    PluginOptions.remove(fileName);
+                    if (wasEnabled) {
+                        this.unloadPlugin(fileName);
                     }
                 }
                 break;
@@ -245,7 +260,6 @@ class ModManager {
                         await this.loadPlugin(pluginName);
                     } else {
                         this.unloadPlugin(pluginName);
-                        this.showReloadWarning();
                     }
                 });
             }
@@ -257,32 +271,6 @@ class ModManager {
         });
     }
 
-    private static showReloadWarning(): void {
-        if (document.getElementById("plugin-reload-warning")) return;
-        
-        this.logger.info("Plugin unloaded, adding reload warning.");
-        const container = document.querySelector(SELECTORS.PLUGINS_CATEGORY);
-        if (!container) return;
-
-        const paragraph = document.createElement("p");
-        paragraph.id = "plugin-reload-warning";
-        paragraph.style.color = "white";
-        
-        const link = document.createElement("a");
-        link.style.color = "cyan";
-        link.style.cursor = "pointer";
-        link.textContent = "here";
-        link.addEventListener("click", () => {
-            window.location.href = '/';
-        });
-        
-        paragraph.appendChild(document.createTextNode("Reload is required to disable plugins. Click "));
-        paragraph.appendChild(link);
-        paragraph.appendChild(document.createTextNode(" to reload."));
-        
-        container.appendChild(paragraph);
-    }
-    
     public static openThemesFolder(): void {
         helpers.waitForElm("#openthemesfolderBtn").then(() => {
             const button = document.getElementById("openthemesfolderBtn") as HTMLElement | null;

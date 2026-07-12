@@ -5,17 +5,20 @@ import type { IPlatform } from "../platform/IPlatform";
 import { STORAGE_KEYS } from "../constants";
 import { PlatformManager } from "../platform/PlatformManager";
 import ModManager from "./ModManager";
+import PluginOptions from "./PluginOptions";
 
 const loggerMocks = vi.hoisted(() => ({
     info: vi.fn(),
     error: vi.fn(),
     warn: vi.fn(),
 }));
+const reloadApplicationMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/logger", () => ({
     default: loggerMocks,
     getLogger: () => loggerMocks,
 }));
+vi.mock("../utils/reloadApplication", () => ({ default: reloadApplicationMock }));
 
 const existsMock = vi.fn(async (_path: string) => true);
 const readFileMock = vi.fn(async (_path: string) => "");
@@ -62,6 +65,7 @@ const mockPlatform = {
 
 describe("ModManager.loadPlugin", () => {
     beforeEach(() => {
+        vi.restoreAllMocks();
         vi.clearAllMocks();
         document.body.innerHTML = "";
         storage = createMemoryStorage();
@@ -130,5 +134,69 @@ describe("ModManager.loadPlugin", () => {
         expect(loggerMocks.error).toHaveBeenCalledWith(
             expect.stringContaining("Failed to read plugin broken.plugin.js")
         );
+    });
+
+    it("registers option metadata before executing the plugin", async () => {
+        readFileMock.mockResolvedValue(`
+            /**
+             * @name Configurable
+             * @description Configurable plugin
+             * @author Test
+             * @version 1.0.0
+             * @option {"id":"enabled","type":"boolean","label":"Enabled","default":true}
+             */
+            window.configurablePluginLoaded = true;
+        `);
+        const registerSpy = vi.spyOn(PluginOptions, "register").mockImplementation(() => {
+            expect(document.getElementById("configurable.plugin.js")).toBeNull();
+            return true;
+        });
+
+        await ModManager.loadPlugin("configurable.plugin.js");
+
+        expect(registerSpy).toHaveBeenCalledWith("configurable.plugin.js", [
+            { id: "enabled", type: "boolean", label: "Enabled", default: true },
+        ]);
+        expect(document.getElementById("configurable.plugin.js")?.dataset.stremioEnhancedPlugin)
+            .toBe("configurable.plugin.js");
+    });
+
+    it("reloads after disabling a plugin so its page-context side effects stop", () => {
+        storage.setItem(
+            STORAGE_KEYS.ENABLED_PLUGINS,
+            JSON.stringify(["test.plugin.js"])
+        );
+        const plugin = document.createElement("script");
+        plugin.id = "test.plugin.js";
+        document.body.appendChild(plugin);
+
+        ModManager.unloadPlugin("test.plugin.js");
+
+        expect(document.getElementById("test.plugin.js")).toBeNull();
+        expect(JSON.parse(storage.getItem(STORAGE_KEYS.ENABLED_PLUGINS) ?? "[]"))
+            .toEqual([]);
+        expect(reloadApplicationMock).toHaveBeenCalledOnce();
+    });
+
+    it("cleans option state and reloads when an enabled plugin is uninstalled", async () => {
+        storage.setItem(
+            STORAGE_KEYS.ENABLED_PLUGINS,
+            JSON.stringify(["test.plugin.js"])
+        );
+        PluginOptions.register("test.plugin.js", [
+            { id: "enabled", type: "boolean", label: "Enabled", default: true },
+        ]);
+        PluginOptions.save("test.plugin.js", { enabled: false });
+        vi.spyOn(ModManager, "isPluginInstalled").mockResolvedValue(true);
+
+        await ModManager.removeMod("test.plugin.js", "plugin");
+
+        expect(mockPlatform.unlink).toHaveBeenCalledWith(
+            expect.stringContaining("test.plugin.js")
+        );
+        expect(PluginOptions.hasOptions("test.plugin.js")).toBe(false);
+        expect(storage.getItem(`${STORAGE_KEYS.PLUGIN_OPTIONS_PREFIX}test.plugin.js`))
+            .toBeNull();
+        expect(reloadApplicationMock).toHaveBeenCalledOnce();
     });
 });
