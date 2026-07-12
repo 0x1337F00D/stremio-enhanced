@@ -1,4 +1,4 @@
-import { ipcRenderer } from "electron";
+import { ipcRenderer, contextBridge } from "electron";
 import { PlatformManager } from "./platform/PlatformManager";
 import { ElectronPlatform } from "./platform/ElectronPlatform";
 import Settings from "./core/Settings";
@@ -27,6 +27,7 @@ import {
 import ExtractMetaData from "./utils/ExtractMetaData";
 import ExtractedSubtitle from "./interfaces/ExtractedSubtitle";
 import PlaybackState from "./utils/PlaybackState";
+import { resolveManagedFilePath } from "./utils/managedPath";
 
 // Initialize platform for Electron
 PlatformManager.setPlatform(new ElectronPlatform());
@@ -40,6 +41,12 @@ async function getTransparencyStatus(): Promise<boolean> {
     }
     return transparencyStatusCache ?? false;
 }
+
+contextBridge.exposeInMainWorld("stremioEnhanced", {
+    applyTheme: async (theme: unknown): Promise<boolean> => {
+        return typeof theme === "string" && applyUserTheme(theme);
+    }
+});
 
 window.addEventListener("load", async () => {
     // Initialize platform if not already (redundant but safe)
@@ -311,19 +318,28 @@ function initializeUserSettings(): void {
     }
 }
 
-async function applyUserTheme(): Promise<void> {
-    const currentTheme = localStorage.getItem(STORAGE_KEYS.CURRENT_THEME);
+async function applyUserTheme(requestedTheme?: string): Promise<boolean> {
+    const currentTheme = requestedTheme ?? localStorage.getItem(STORAGE_KEYS.CURRENT_THEME);
     
     if (!currentTheme || currentTheme === "Default") {
+        document.getElementById("activeTheme")?.remove();
         localStorage.setItem(STORAGE_KEYS.CURRENT_THEME, "Default");
-        return;
+        return true;
     }
     
-    const themePath = join(properties.themesPath, currentTheme);
+    const themePath = resolveManagedFilePath(
+        properties.themesPath,
+        currentTheme,
+        FILE_EXTENSIONS.THEME
+    );
+    if (!themePath) {
+        logger.warn(`Refused to apply invalid theme name: ${currentTheme}`);
+        return false;
+    }
     
     if (!await PlatformManager.current.exists(themePath)) {
         localStorage.setItem(STORAGE_KEYS.CURRENT_THEME, "Default");
-        return;
+        return false;
     }
     
     // Remove existing theme if present
@@ -334,6 +350,9 @@ async function applyUserTheme(): Promise<void> {
     themeElement.setAttribute("rel", "stylesheet");
     themeElement.setAttribute("href", pathToFileURL(themePath).toString());
     document.head.appendChild(themeElement);
+
+    localStorage.setItem(STORAGE_KEYS.CURRENT_THEME, currentTheme);
+    return true;
 }
 
 async function loadEnabledPlugins(): Promise<void> {

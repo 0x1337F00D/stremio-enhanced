@@ -69,15 +69,13 @@ async function createWindow() {
     mainWindow = new BrowserWindow({
         webPreferences: {
             preload: join(__dirname, "preload.js"),
-            // Security Note: These settings are required for the plugin/theme system
-            // to work properly. The app loads web.stremio.com and needs to:
-            // 1. Make cross-origin requests to local streaming server (webSecurity: false)
-            // 2. Access Node.js APIs for file operations (nodeIntegration: true)
-            // 3. Share context between preload and renderer (contextIsolation: false)
-            // TODO: Consider implementing a contextBridge-based architecture for better security
+            // Stremio Web needs cross-origin access to the local streaming server.
+            // Keep the remote page isolated from Node while allowing the trusted
+            // preload to manage local plugin and theme files.
             webSecurity: false,
-            nodeIntegration: true,
-            contextIsolation: false,
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: false,
             // Additional security hardening
             allowRunningInsecureContent: false,
             experimentalFeatures: false,
@@ -173,7 +171,7 @@ async function createWindow() {
     ipcMain.handle(IPC_CHANNELS.GET_TRANSPARENCY_STATUS, () => {
         return existsSync(transparencyFlagPath);
     });
-    
+
     // Opens links in external browser instead of opening them in the Electron app.
     mainWindow.webContents.setWindowOpenHandler((edata:any) => {
         shell.openExternal(edata.url);
