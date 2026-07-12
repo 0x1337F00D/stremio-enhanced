@@ -575,6 +575,17 @@ function setupManagedFolderButton(buttonId: string, folderPath: string): void {
 }
 
 let isImporting = false;
+function sanitizeImportedModFileName(fileName: string, type: "theme" | "plugin"): string | null {
+    const expectedExtension = type === "theme" ? FILE_EXTENSIONS.THEME : FILE_EXTENSIONS.PLUGIN;
+    const normalized = fileName.trim().split(/[\\/]/).pop() || "";
+
+    if (!normalized) return null;
+    if (!normalized.endsWith(expectedExtension)) return null;
+    if (!/^[A-Za-z0-9._-]+$/.test(normalized)) return null;
+
+    return normalized;
+}
+
 async function importModFile(type: "theme" | "plugin"): Promise<void> {
     if (isImporting) return;
     isImporting = true;
@@ -588,12 +599,13 @@ async function importModFile(type: "theme" | "plugin"): Promise<void> {
             return;
         }
 
+        const safeFileName = sanitizeImportedModFileName(file.name, type);
         const expectedExtension = type === "theme" ? FILE_EXTENSIONS.THEME : FILE_EXTENSIONS.PLUGIN;
-        if (!file.name.endsWith(expectedExtension)) {
+        if (!safeFileName) {
             await Helpers.showAlert(
                 "warning",
                 "Unsupported File",
-                `Please choose a ${expectedExtension} file.`,
+                `Please choose a valid ${expectedExtension} file name.`,
                 ["OK"]
             );
             return;
@@ -601,7 +613,7 @@ async function importModFile(type: "theme" | "plugin"): Promise<void> {
 
         const content = await PlatformManager.current.readFile(filePath);
         const destinationDirectory = type === "theme" ? properties.themesPath : properties.pluginsPath;
-        await PlatformManager.current.writeFile(join(destinationDirectory, file.name), content);
+        await PlatformManager.current.writeFile(join(destinationDirectory, safeFileName), content);
 
         // Use a timeout to avoid location.reload() triggering loop issues with Capacitor Activity Results
         setTimeout(() => location.reload(), 100);
