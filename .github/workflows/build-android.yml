@@ -21,6 +21,15 @@ jobs:
     - name: Install dependencies
       run: npm install
 
+    - name: Lint TypeScript sources
+      run: npm run lint
+
+    - name: Run unit tests
+      run: npm test
+
+    - name: Build desktop sources
+      run: npm run dist
+
     - name: Build Android Preload Script
       run: node scripts/build-android-preload.js
 
