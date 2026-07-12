@@ -1,0 +1,125 @@
+name: Build signed desktop release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify tag matches package version
+        run: |
+          node -e "const expected='v'+require('./package.json').version; if (process.env.GITHUB_REF_NAME !== expected) { throw new Error('Expected tag '+expected+', got '+process.env.GITHUB_REF_NAME); }"
+      - run: npm run lint
+      - run: npm test
+      - run: npm run dist
+      - run: npm run typecheck:android
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: windows
+            os: windows-latest
+          - id: macos
+            os: macos-latest
+          - id: linux
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Refuse unsigned Windows release builds
+        if: matrix.id == 'windows'
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          node -e "const required=['CSC_LINK','CSC_KEY_PASSWORD']; const missing=required.filter(name => !process.env[name]); if (missing.length) { throw new Error('Missing Windows release secrets: '+missing.join(', ')); }"
+      - name: Refuse unsigned macOS release builds
+        if: matrix.id == 'macos'
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          node -e "const required=['CSC_LINK','CSC_KEY_PASSWORD','APPLE_ID','APPLE_APP_SPECIFIC_PASSWORD','APPLE_TEAM_ID']; const missing=required.filter(name => !process.env[name]); if (missing.length) { throw new Error('Missing macOS release secrets: '+missing.join(', ')); }"
+      - run: npm run dist
+      - name: Build signed Windows update artifacts
+        if: matrix.id == 'windows'
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: npx electron-builder --win --x64 --publish never -c.forceCodeSigning=true
+      - name: Build signed and notarized macOS update artifacts
+        if: matrix.id == 'macos'
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder --mac --x64 --arm64 --publish never -c.forceCodeSigning=true
+      - name: Build Linux update artifacts
+        if: matrix.id == 'linux'
+        run: npx electron-builder --linux --x64 --arm64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.id }}
+          if-no-files-found: error
+          path: |
+            release-builds/*.exe
+            release-builds/*.blockmap
+            release-builds/latest*.yml
+            release-builds/*.dmg
+            release-builds/*.zip
+            release-builds/*.AppImage
+
+  draft-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: release-artifacts
+      - name: Validate updater metadata and hashes
+        run: node scripts/validate-update-artifacts.js release-artifacts
+      - name: Create or refresh draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          mapfile -d '' assets < <(find release-artifacts -type f -print0)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" != "true" ]; then
+              echo "Refusing to overwrite a published release." >&2
+              exit 1
+            fi
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$TAG" "${assets[@]}" --draft --generate-notes --verify-tag --title "$TAG"
+          fi

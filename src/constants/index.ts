@@ -61,8 +61,10 @@ export const IPC_CHANNELS = {
     CLOSE_WINDOW: 'close-window',
     SET_TRANSPARENCY: 'set-transparency',
     GET_TRANSPARENCY_STATUS: 'get-transparency-status',
-    UPDATE_CHECK_STARTUP: 'update-check-on-startup',
-    UPDATE_CHECK_USER: 'update-check-userrequest',
+    UPDATE_CHECK: 'update:check',
+    UPDATE_STATE_GET: 'update:state:get',
+    UPDATE_STATE_CHANGED: 'update:state:changed',
+    UPDATE_INSTALL: 'update:install',
     FULLSCREEN_CHANGED: 'fullscreen-changed',
     EXTRACT_EMBEDDED_SUBTITLES: 'extract-embedded-subtitles',
 } as const;
@@ -78,9 +80,6 @@ export const URLS = {
     STREMIO_WEB: 'https://web.stremio.com/',
     STREMIO_WEB_ADD_ADDON: 'https://web.stremio.com/#/addons?addon=',
     REGISTRY: 'https://raw.githubusercontent.com/REVENGE977/stremio-enhanced-registry/refs/heads/main/registry.json',
-    VERSION_CHECK: 'https://github.com/REVENGE977/stremio-enhanced-community/raw/main/version',
-    RELEASES_API: 'https://api.github.com/repos/REVENGE977/stremio-enhanced-community/releases/latest',
-    RELEASES_PAGE: 'https://github.com/REVENGE977/stremio-enhanced-community/releases/latest',
     STREMIO_SERVICE_GITHUB_API: "https://api.github.com/repos/Stremio/stremio-service/releases/latest"
 } as const;
 

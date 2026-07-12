@@ -24,17 +24,6 @@ function copyFiles(srcDir, destDir) {
     });
 }
 
-// Copy the 'version' file from the root directory
-const versionFileSrc = path.join(__dirname, 'version');
-const versionFileDest = path.join(__dirname, 'dist', 'version');
-
-if (fs.existsSync(versionFileSrc)) {
-    fs.copyFileSync(versionFileSrc, versionFileDest);
-    console.log(`Copied: ${versionFileSrc} to ${versionFileDest}`);
-} else {
-    console.log('No version file found in the root directory.');
-}
-
 const srcDir = 'src/components';
 const destDir = 'dist/components';
 
