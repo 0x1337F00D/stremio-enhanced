@@ -22,6 +22,7 @@ import ExtractMetaData from "../utils/ExtractMetaData";
 import { NodeJS } from 'capacitor-nodejs';
 import LogManager from "../core/LogManager";
 import { FilePicker } from '@capawesome/capacitor-file-picker';
+import { createStremioEnhancedApi } from "../core/StremioEnhancedApi";
 
 // Initialize platform for Capacitor
 PlatformManager.setPlatform(new CapacitorPlatform());
@@ -90,13 +91,7 @@ const init = async () => {
     observeSettingsUi();
     observePlayerUi();
 
-    // Expose API for injected scripts
-    (window as any).stremioEnhanced = {
-        applyTheme: async (theme: string) => {
-            // applyUserTheme reads from localStorage which is updated by the injected script
-            await applyUserTheme();
-        }
-    };
+    window.stremioEnhanced = createStremioEnhancedApi(applyUserTheme);
 
     initializeUserSettings();
 
@@ -235,14 +230,7 @@ async function doCheckSettings() {
 
                 if (metaData) {
                     if (metaData.name.toLowerCase() !== "default") {
-                        Settings.addItem("theme", theme, {
-                            name: metaData.name,
-                            description: metaData.description,
-                            author: metaData.author,
-                            version: metaData.version,
-                            updateUrl: metaData.updateUrl,
-                            source: metaData.source
-                        });
+                        Settings.addItem("theme", theme, metaData);
                     }
                 }
             } catch (e) {
@@ -259,14 +247,7 @@ async function doCheckSettings() {
             const metaData = ExtractMetaData.extractMetadataFromText(content);
 
             if (metaData) {
-                Settings.addItem("plugin", plugin, {
-                    name: metaData.name,
-                    description: metaData.description,
-                    author: metaData.author,
-                    version: metaData.version,
-                    updateUrl: metaData.updateUrl,
-                    source: metaData.source
-                });
+                Settings.addItem("plugin", plugin, metaData);
             }
         } catch (e) {
             logger.error(`Failed to load plugin metadata for ${plugin}: ${e}`);
@@ -509,12 +490,18 @@ function initializeUserSettings(): void {
     }
 }
 
-async function applyUserTheme(): Promise<void> {
-    const currentTheme = localStorage.getItem(STORAGE_KEYS.CURRENT_THEME);
+async function applyUserTheme(requestedTheme?: string): Promise<boolean> {
+    const currentTheme = requestedTheme ?? localStorage.getItem(STORAGE_KEYS.CURRENT_THEME);
 
     if (!currentTheme || currentTheme === "Default") {
+        document.getElementById("activeTheme")?.remove();
         localStorage.setItem(STORAGE_KEYS.CURRENT_THEME, "Default");
-        return;
+        return true;
+    }
+
+    if (!/^[A-Za-z0-9._-]+\.theme\.css$/.test(currentTheme)) {
+        logger.warn(`Refused to apply invalid theme name: ${currentTheme}`);
+        return false;
     }
 
     const themePath = join(properties.themesPath, currentTheme);
@@ -527,7 +514,7 @@ async function applyUserTheme(): Promise<void> {
     try {
         if (!await PlatformManager.current.exists(themePath)) {
             localStorage.setItem(STORAGE_KEYS.CURRENT_THEME, "Default");
-            return;
+            return false;
         }
 
         // Remove existing theme if present
@@ -539,8 +526,11 @@ async function applyUserTheme(): Promise<void> {
         styleElement.setAttribute("id", "activeTheme");
         styleElement.textContent = content;
         document.head.appendChild(styleElement);
+        localStorage.setItem(STORAGE_KEYS.CURRENT_THEME, currentTheme);
+        return true;
     } catch (e) {
         logger.error("Failed to apply theme: " + e);
+        return false;
     }
 }
 

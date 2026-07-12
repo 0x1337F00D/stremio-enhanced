@@ -51,6 +51,7 @@ export const STORAGE_KEYS = {
     CURRENT_THEME: 'currentTheme',
     DISCORD_RPC: 'discordrichpresence',
     CHECK_UPDATES_ON_STARTUP: 'checkForUpdatesOnStartup',
+    PLUGIN_OPTIONS_PREFIX: 'stremioEnhanced.pluginOptions.v1:',
 } as const;
 
 // IPC Channel names for main <-> renderer communication

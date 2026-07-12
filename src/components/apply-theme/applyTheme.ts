@@ -44,5 +44,16 @@ export function getApplyThemeTemplate(): string {
             newThemeElement.innerText = "Applied";
         }
     }
+
+    if (!document.documentElement.dataset.stremioEnhancedThemeClickBound) {
+        document.documentElement.dataset.stremioEnhancedThemeClickBound = "true";
+        document.addEventListener("click", (event) => {
+            const target = event.target instanceof Element
+                ? event.target.closest("[data-stremio-enhanced-apply-theme]")
+                : null;
+            const theme = target?.getAttribute("data-stremio-enhanced-apply-theme");
+            if (theme) void applyTheme(theme);
+        });
+    }
     `;
 }

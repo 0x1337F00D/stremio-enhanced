@@ -28,6 +28,7 @@ import ExtractMetaData from "./utils/ExtractMetaData";
 import ExtractedSubtitle from "./interfaces/ExtractedSubtitle";
 import PlaybackState from "./utils/PlaybackState";
 import { resolveManagedFilePath } from "./utils/managedPath";
+import { createStremioEnhancedApi } from "./core/StremioEnhancedApi";
 
 // Initialize platform for Electron
 PlatformManager.setPlatform(new ElectronPlatform());
@@ -42,11 +43,10 @@ async function getTransparencyStatus(): Promise<boolean> {
     return transparencyStatusCache ?? false;
 }
 
-contextBridge.exposeInMainWorld("stremioEnhanced", {
-    applyTheme: async (theme: unknown): Promise<boolean> => {
-        return typeof theme === "string" && applyUserTheme(theme);
-    }
-});
+contextBridge.exposeInMainWorld(
+    "stremioEnhanced",
+    createStremioEnhancedApi(applyUserTheme)
+);
 
 window.addEventListener("load", async () => {
     // Initialize platform if not already (redundant but safe)
@@ -176,14 +176,7 @@ async function doCheckSettings() {
 
                 if (metaData) {
                     if (metaData.name.toLowerCase() !== "default") {
-                        Settings.addItem("theme", theme, {
-                            name: metaData.name,
-                            description: metaData.description,
-                            author: metaData.author,
-                            version: metaData.version,
-                            updateUrl: metaData.updateUrl,
-                            source: metaData.source
-                        });
+                        Settings.addItem("theme", theme, metaData);
                     }
                 }
             } catch (e) {
@@ -200,14 +193,7 @@ async function doCheckSettings() {
             const metaData = ExtractMetaData.extractMetadataFromText(content);
 
             if (metaData) {
-                Settings.addItem("plugin", plugin, {
-                    name: metaData.name,
-                    description: metaData.description,
-                    author: metaData.author,
-                    version: metaData.version,
-                    updateUrl: metaData.updateUrl,
-                    source: metaData.source
-                });
+                Settings.addItem("plugin", plugin, metaData);
             }
         } catch (e) {
             logger.error(`Failed to load plugin metadata for ${plugin}: ${e}`);

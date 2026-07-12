@@ -14,13 +14,13 @@
   -  [x] Add UI for submitting skip segments
 - [x] Make it so if the user opens Discord after opening Stremio Enhanced, Discord Rich Presence still works.
 - [x] In-app patch notes when an update is available.
-- [ ] Support having options for plugins. 
+- [x] Support having options for plugins.
 - [ ] Improve update system: auto update so user doesn't have to download anything manually. ⭐
 - [x] Auto download Stremio Service for the user if an installation is not detected.
 - [x] Support addons links by opening directly: instead of having the user copy and paste links. ⭐
 - [x] In-app plugins/themes list to browse and find new plugins/themes.
 - [x] Auto download Stremio Service if not found.
-- [ ] Plugin idea: categories in library.
+- [x] Plugin idea: categories in library.
 - [x] Make it run the streaming server natively without Stremio Service. (tested on windows only so far)
   - [x] Make it run Stremio Service by default but if the user does create a "stremaingserver" folder in the current directory, it will use the server.js that's there.
   - [x] Make it download and install Stremio Service automatically if the streaming isn't found in the current directory.

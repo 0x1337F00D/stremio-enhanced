@@ -6,9 +6,25 @@ import { getEnhancedNav } from "../components/enhanced-nav/enhancedNav";
 import { getLogger } from "../utils/logger";
 import ModManager from "./ModManager";
 import { SELECTORS, CLASSES, STORAGE_KEYS } from "../constants";
+import PluginOptions from "./PluginOptions";
+import { mountPluginOptions } from "../components/plugin-options/pluginOptions";
 
 class Settings {
     private static logger = getLogger("Settings");
+
+    private static getEnabledPlugins(): string[] {
+        try {
+            const storedValue: unknown = JSON.parse(
+                localStorage.getItem(STORAGE_KEYS.ENABLED_PLUGINS) || "[]"
+            );
+            return Array.isArray(storedValue)
+                ? storedValue.filter((value): value is string => typeof value === "string")
+                : [];
+        } catch (error) {
+            this.logger.warn(`Failed to parse enabled plugins: ${error}`);
+            return [];
+        }
+    }
 
     private static getCategoryKey(sectionId: string, title: string): string {
         return `${sectionId}:${title.trim().toLowerCase()}`;
@@ -195,9 +211,8 @@ class Settings {
             return;
         }
 
-        const enabledPlugins: string[] = JSON.parse(
-            localStorage.getItem(STORAGE_KEYS.ENABLED_PLUGINS) || "[]"
-        );
+        const enabledPlugins = this.getEnabledPlugins();
+        PluginOptions.register(fileName, metaData.options ?? []);
 
         const pluginContainer = document.createElement("div");
         pluginContainer.innerHTML = getPluginItemTemplate(fileName, metaData, enabledPlugins.includes(fileName));
@@ -206,6 +221,20 @@ class Settings {
 
         const pluginsCategory = document.querySelector(SELECTORS.PLUGINS_CATEGORY);
         pluginsCategory?.appendChild(pluginContainer);
+
+        const actionContainer = pluginContainer.querySelector<HTMLElement>(
+            "[data-stremio-enhanced-plugin-actions]"
+        );
+        const pluginToggle = pluginContainer.querySelector<HTMLElement>(".plugin");
+        if (actionContainer && pluginToggle && metaData.options?.length) {
+            mountPluginOptions({
+                container: pluginContainer,
+                actionContainer,
+                pluginFile: fileName,
+                definitions: metaData.options,
+                isEnabled: () => pluginToggle.classList.contains(CLASSES.CHECKED),
+            });
+        }
         
         ModManager.checkForItemUpdates(fileName);
     }

@@ -149,6 +149,27 @@ You are required to provide metadata for the plugin. Here is an example:
  */
 ```
 
+Plugins can declare local settings with repeatable, one-line `@option` JSON tags. Supported types are `boolean`, `text`, `number`, and `select`:
+
+```js
+/**
+ * @name ConfigurablePlugin
+ * @description Example plugin with local options
+ * @updateUrl none
+ * @version 1.0.0
+ * @author YourName
+ * @option {"id":"enabled","type":"boolean","label":"Enabled","default":true}
+ * @option {"id":"mode","type":"select","label":"Mode","default":"compact","choices":[{"value":"compact","label":"Compact"},{"value":"full","label":"Full"}]}
+ */
+
+const pluginFile = document.currentScript?.dataset.stremioEnhancedPlugin;
+const options = window.stremioEnhanced?.pluginOptions?.get(pluginFile) ?? {};
+```
+
+An **Options** button appears beside configurable plugins in Enhanced settings. Values are validated against the plugin metadata and stored locally per plugin filename. Enabled plugins reload after settings change; disabled plugins use the new values when next enabled. Options are not a secret store—plugins running in the page can read their values.
+
+The repository includes [`library-categories.plugin.js`](./examples/library-categories.plugin.js) as a complete example. It adds local categories, filtering, assignment mode, and optional badges to the Stremio library without changing the Stremio profile.
+
 ## 🎨 Creating Your Own Theme
 Create a file with a name ending in `.theme.css` and write your CSS modifications there. You can use the devtools (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd>) to find an element's class name, etc.
 
